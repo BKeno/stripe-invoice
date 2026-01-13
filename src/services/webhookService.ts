@@ -30,9 +30,12 @@ export const handlePaymentSuccess = async (
 ): Promise<void> => {
   console.log(`Processing payment: ${paymentIntent.id}`);
 
-  // SECURITY LAYER 1: Check if invoice already exists in Stripe metadata
-  if (paymentIntent.metadata.invoice_number || paymentIntent.metadata.processing) {
-    console.log(`[IDEMPOTENCY] Invoice already exists or processing: ${paymentIntent.metadata.invoice_number || 'processing'}`);
+  // SECURITY LAYER 1: Fetch FRESH payment intent to check current metadata
+  // (webhook payload may contain stale data from when the event was created)
+  const freshPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
+
+  if (freshPaymentIntent.metadata.invoice_number || freshPaymentIntent.metadata.processing) {
+    console.log(`[IDEMPOTENCY] Invoice already exists or processing: ${freshPaymentIntent.metadata.invoice_number || 'processing'}`);
     return;
   }
 
@@ -182,6 +185,12 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
   const paymentIntentId = refund.payment_intent as string;
   const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
+  // IDEMPOTENCY: Check if refund already processed
+  if (paymentIntent.metadata.refund_invoice_number) {
+    console.log(`[IDEMPOTENCY] Refund invoice already exists: ${paymentIntent.metadata.refund_invoice_number}`);
+    return;
+  }
+
   // Get original invoice number from metadata
   const originalInvoiceNumber = paymentIntent.metadata.invoice_number;
 
@@ -256,6 +265,13 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
     if (sheetsEnabled) {
       await updateInvoiceStatus(paymentIntentId, refundInvoiceNumber, 'Sztornózva', firstSheetName);
     }
+
+    // Store refund invoice number in metadata for idempotency
+    await stripe.paymentIntents.update(paymentIntentId, {
+      metadata: {
+        refund_invoice_number: refundInvoiceNumber
+      }
+    });
 
     console.log(`Refund invoice generated: ${refundInvoiceNumber} for payment ${paymentIntentId}`);
   } catch (err) {
