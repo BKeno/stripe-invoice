@@ -28,19 +28,18 @@ const getSzamlazzConfig = (): SzamlazzConfig => {
 const buildInvoiceXML = (
   data: InvoiceData,
   config: SzamlazzConfig,
-  isStorno = false
+  stornoInvoiceNumber?: string
 ): string => {
+  const isStorno = !!stornoInvoiceNumber;
+
   // Build line items XML
   const lineItemsXML = data.lineItems
     .map((item) => {
       const netPrice = item.unitPrice / (1 + item.vatRate / 100);
       const vatAmount = item.unitPrice - netPrice;
-      const itemName = isStorno
-        ? `Sztornó - ${item.productName}`
-        : item.productName;
 
       return `    <tetel>
-      <megnevezes>${itemName}</megnevezes>
+      <megnevezes>${item.productName}</megnevezes>
       <mennyiseg>${item.quantity}</mennyiseg>
       <mennyisegiEgyseg>db</mennyisegiEgyseg>
       <nettoEgysegar>${netPrice.toFixed(2)}</nettoEgysegar>
@@ -51,6 +50,13 @@ const buildInvoiceXML = (
     </tetel>`;
     })
     .join("\n");
+
+  // Storno-specific XML tags
+  const stornoXML = isStorno
+    ? `    <sztornozas>true</sztornozas>
+    <sztornozott>${stornoInvoiceNumber}</sztornozott>
+    <fizetve>true</fizetve>`
+    : `    <fizetve>true</fizetve>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmlszamla xmlns="http://www.szamlazz.hu/xmlszamla" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlszamla https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd">
@@ -69,7 +75,7 @@ const buildInvoiceXML = (
     <fizmod>Paylink</fizmod>
     <penznem>${data.currency.toUpperCase()}</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
-    ${isStorno ? "<storno>true</storno>" : ""}
+${stornoXML}
   </fejlec>
   <elado>
     <bank>${config.bank}</bank>
@@ -142,7 +148,7 @@ const callSzamlazzAPI = async (xmlData: string): Promise<string> => {
 export const generateInvoice = async (data: InvoiceData): Promise<string> => {
   try {
     const config = getSzamlazzConfig();
-    const xmlData = buildInvoiceXML(data, config, false);
+    const xmlData = buildInvoiceXML(data, config);
 
     const invoiceNumber = await callSzamlazzAPI(xmlData);
 
@@ -162,11 +168,11 @@ export const generateRefundInvoice = async (
 ): Promise<string> => {
   try {
     const config = getSzamlazzConfig();
-    const xmlData = buildInvoiceXML(data, config, true);
+    const xmlData = buildInvoiceXML(data, config, originalInvoiceNumber);
 
     const invoiceNumber = await callSzamlazzAPI(xmlData);
 
-    console.log(`Refund invoice generated: ${invoiceNumber}`);
+    console.log(`Refund invoice generated: ${invoiceNumber} (cancelling ${originalInvoiceNumber})`);
     return invoiceNumber;
   } catch (err) {
     const error = err as Error;
