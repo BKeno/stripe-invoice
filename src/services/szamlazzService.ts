@@ -87,7 +87,7 @@ ${stornoXML}
     <telepules>${data.billingAddress.city}</telepules>
     <cim>${data.billingAddress.address}</cim>
     <email>${data.billingAddress.email}</email>
-    <adoalany>-1</adoalany>
+    <adoalany>0</adoalany>
   </vevo>
   <tetelek>
 ${lineItemsXML}
