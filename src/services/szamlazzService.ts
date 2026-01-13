@@ -1,7 +1,7 @@
-import type { InvoiceData, InvoiceLineItem } from '../types/index.js';
-import { InvoiceGenerationError } from '../utils/errors.js';
+import type { InvoiceData, InvoiceLineItem } from "../types/index.js";
+import { InvoiceGenerationError } from "../utils/errors.js";
 
-const SZAMLAZZ_API_URL = 'https://www.szamlazz.hu/szamla/';
+const SZAMLAZZ_API_URL = "https://www.szamlazz.hu/szamla/";
 
 interface SzamlazzConfig {
   apiKey: string;
@@ -13,26 +13,33 @@ interface SzamlazzConfig {
 
 const getSzamlazzConfig = (): SzamlazzConfig => {
   const apiKey = process.env.SZAMLAZZ_API_KEY;
-  const eInvoice = process.env.SZAMLAZZ_E_INVOICE === 'true';
-  const issuerName = process.env.SZAMLAZZ_ISSUER_NAME ?? '';
-  const bank = process.env.SZAMLAZZ_BANK ?? '';
-  const bankAccountNumber = process.env.SZAMLAZZ_BANK_ACCOUNT ?? '';
+  const eInvoice = process.env.SZAMLAZZ_E_INVOICE === "true";
+  const issuerName = process.env.SZAMLAZZ_ISSUER_NAME ?? "";
+  const bank = process.env.SZAMLAZZ_BANK ?? "";
+  const bankAccountNumber = process.env.SZAMLAZZ_BANK_ACCOUNT ?? "";
 
   if (!apiKey) {
-    throw new Error('SZAMLAZZ_API_KEY not configured');
+    throw new Error("SZAMLAZZ_API_KEY not configured");
   }
 
   return { apiKey, eInvoice, issuerName, bank, bankAccountNumber };
 };
 
-const buildInvoiceXML = (data: InvoiceData, config: SzamlazzConfig, isStorno = false): string => {
+const buildInvoiceXML = (
+  data: InvoiceData,
+  config: SzamlazzConfig,
+  isStorno = false
+): string => {
   // Build line items XML
-  const lineItemsXML = data.lineItems.map(item => {
-    const netPrice = item.unitPrice / (1 + item.vatRate / 100);
-    const vatAmount = item.unitPrice - netPrice;
-    const itemName = isStorno ? `Sztornó - ${item.productName}` : item.productName;
+  const lineItemsXML = data.lineItems
+    .map((item) => {
+      const netPrice = item.unitPrice / (1 + item.vatRate / 100);
+      const vatAmount = item.unitPrice - netPrice;
+      const itemName = isStorno
+        ? `Sztornó - ${item.productName}`
+        : item.productName;
 
-    return `    <tetel>
+      return `    <tetel>
       <megnevezes>${itemName}</megnevezes>
       <mennyiseg>${item.quantity}</mennyiseg>
       <mennyisegiEgyseg>db</mennyisegiEgyseg>
@@ -42,7 +49,8 @@ const buildInvoiceXML = (data: InvoiceData, config: SzamlazzConfig, isStorno = f
       <afaErtek>${(vatAmount * item.quantity).toFixed(2)}</afaErtek>
       <bruttoErtek>${item.amount.toFixed(2)}</bruttoErtek>
     </tetel>`;
-  }).join('\n');
+    })
+    .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmlszamla xmlns="http://www.szamlazz.hu/xmlszamla" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlszamla https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd">
@@ -53,13 +61,15 @@ const buildInvoiceXML = (data: InvoiceData, config: SzamlazzConfig, isStorno = f
     <szamlaLetoltesPld>1</szamlaLetoltesPld>
   </beallitasok>
   <fejlec>
-    <keltDatum>${new Date().toISOString().split('T')[0]}</keltDatum>
-    <teljesitesDatum>${new Date().toISOString().split('T')[0]}</teljesitesDatum>
-    <fizetesiHataridoDatum>${new Date().toISOString().split('T')[0]}</fizetesiHataridoDatum>
-    <fizmod>Bankkártya (Stripe)</fizmod>
+    <keltDatum>${new Date().toISOString().split("T")[0]}</keltDatum>
+    <teljesitesDatum>${new Date().toISOString().split("T")[0]}</teljesitesDatum>
+    <fizetesiHataridoDatum>${
+      new Date().toISOString().split("T")[0]
+    }</fizetesiHataridoDatum>
+    <fizmod>Paylink</fizmod>
     <penznem>${data.currency.toUpperCase()}</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
-    ${isStorno ? '<storno>true</storno>' : ''}
+    ${isStorno ? "<storno>true</storno>" : ""}
   </fejlec>
   <elado>
     <bank>${config.bank}</bank>
@@ -81,12 +91,12 @@ ${lineItemsXML}
 
 const callSzamlazzAPI = async (xmlData: string): Promise<string> => {
   const formData = new FormData();
-  const blob = new Blob([xmlData], { type: 'text/xml' });
-  formData.append('action-xmlagentxmlfile', blob, 'invoice.xml');
+  const blob = new Blob([xmlData], { type: "text/xml" });
+  formData.append("action-xmlagentxmlfile", blob, "invoice.xml");
 
   const response = await fetch(SZAMLAZZ_API_URL, {
-    method: 'POST',
-    body: formData
+    method: "POST",
+    body: formData,
   });
 
   if (!response.ok) {
@@ -95,7 +105,7 @@ const callSzamlazzAPI = async (xmlData: string): Promise<string> => {
   }
 
   // Get invoice number from response header
-  const invoiceNumber = response.headers.get('szlahu_szamlaszam');
+  const invoiceNumber = response.headers.get("szlahu_szamlaszam");
 
   if (invoiceNumber) {
     console.log(`[Számlázz.hu] Invoice created: ${invoiceNumber}`);
@@ -104,14 +114,16 @@ const callSzamlazzAPI = async (xmlData: string): Promise<string> => {
 
   // Fallback: try to read from response body
   const responseText = await response.text();
-  const textPart = responseText.split('%PDF-')[0];
+  const textPart = responseText.split("%PDF-")[0];
 
   if (textPart && textPart.length > 0) {
-    const lines = textPart.split('\n');
-    const successLine = lines.find(line => line.includes('szlahu_szamlaszam'));
+    const lines = textPart.split("\n");
+    const successLine = lines.find((line) =>
+      line.includes("szlahu_szamlaszam")
+    );
 
     if (successLine) {
-      const invoiceNumber = successLine.split('=')[1]?.trim();
+      const invoiceNumber = successLine.split("=")[1]?.trim();
       if (invoiceNumber) {
         console.log(`[Számlázz.hu] Invoice created: ${invoiceNumber}`);
         return invoiceNumber;
@@ -120,8 +132,11 @@ const callSzamlazzAPI = async (xmlData: string): Promise<string> => {
   }
 
   const preview = responseText.substring(0, 500);
-  console.error('[Számlázz.hu] Failed to parse invoice number. Response preview:', preview);
-  throw new Error('Invoice number not found in response');
+  console.error(
+    "[Számlázz.hu] Failed to parse invoice number. Response preview:",
+    preview
+  );
+  throw new Error("Invoice number not found in response");
 };
 
 export const generateInvoice = async (data: InvoiceData): Promise<string> => {
@@ -135,7 +150,9 @@ export const generateInvoice = async (data: InvoiceData): Promise<string> => {
     return invoiceNumber;
   } catch (err) {
     const error = err as Error;
-    throw new InvoiceGenerationError(`Failed to generate invoice: ${error.message}`);
+    throw new InvoiceGenerationError(
+      `Failed to generate invoice: ${error.message}`
+    );
   }
 };
 
@@ -153,6 +170,8 @@ export const generateRefundInvoice = async (
     return invoiceNumber;
   } catch (err) {
     const error = err as Error;
-    throw new InvoiceGenerationError(`Failed to generate refund invoice: ${error.message}`);
+    throw new InvoiceGenerationError(
+      `Failed to generate refund invoice: ${error.message}`
+    );
   }
 };
