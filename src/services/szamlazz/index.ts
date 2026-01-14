@@ -1,14 +1,14 @@
 import type { InvoiceData } from '../../types/index.js';
 import { InvoiceGenerationError } from '../../utils/errors.js';
-import { SZAMLAZZ_API_URL, getSzamlazzConfig } from './config.js';
+import { getSzamlazzConfig } from './config.js';
 import { buildInvoiceXML, buildStornoXML } from './xml.js';
 
-const callSzamlazzAPI = async (xmlData: string): Promise<string> => {
+const callSzamlazzAPI = async (xmlData: string, apiUrl: string): Promise<string> => {
   const formData = new FormData();
   const blob = new Blob([xmlData], { type: 'text/xml' });
   formData.append('action-xmlagentxmlfile', blob, 'invoice.xml');
 
-  const response = await fetch(SZAMLAZZ_API_URL, {
+  const response = await fetch(apiUrl, {
     method: 'POST',
     body: formData
   });
@@ -58,7 +58,7 @@ export const generateInvoice = async (data: InvoiceData): Promise<string> => {
     const config = getSzamlazzConfig();
     const xmlData = buildInvoiceXML(data, config);
 
-    const invoiceNumber = await callSzamlazzAPI(xmlData);
+    const invoiceNumber = await callSzamlazzAPI(xmlData, config.apiUrl);
 
     console.log(`Invoice generated: ${invoiceNumber}`);
     return invoiceNumber;
@@ -78,7 +78,7 @@ export const generateRefundInvoice = async (
     const config = getSzamlazzConfig();
     const xmlData = buildStornoXML(data, config, originalInvoiceNumber);
 
-    const invoiceNumber = await callSzamlazzAPI(xmlData);
+    const invoiceNumber = await callSzamlazzAPI(xmlData, config.apiUrl);
 
     console.log(
       `Refund invoice generated: ${invoiceNumber} (cancelling ${originalInvoiceNumber})`
