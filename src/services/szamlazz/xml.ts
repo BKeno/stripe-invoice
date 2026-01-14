@@ -105,9 +105,9 @@ export const buildStornoXML = (
     <fizmod>Paylink</fizmod>
     <penznem>${data.currency.toUpperCase()}</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
+    <fizetve>true</fizetve>
     <sztornozas>true</sztornozas>
     <sztornozott>${originalInvoiceNumber}</sztornozott>
-    <fizetve>true</fizetve>
   </fejlec>
   <elado>
     <bank>${config.bank}</bank>
