@@ -3,10 +3,14 @@ import { InvoiceGenerationError } from '../../utils/errors.js';
 import { getSzamlazzConfig } from './config.js';
 import { buildInvoiceXML, buildStornoXML } from './xml.js';
 
-const callSzamlazzAPI = async (xmlData: string, apiUrl: string): Promise<string> => {
+const callSzamlazzAPI = async (
+  xmlData: string,
+  apiUrl: string,
+  formFieldName = 'action-xmlagentxmlfile'
+): Promise<string> => {
   const formData = new FormData();
   const blob = new Blob([xmlData], { type: 'text/xml' });
-  formData.append('action-xmlagentxmlfile', blob, 'invoice.xml');
+  formData.append(formFieldName, blob, 'invoice.xml');
 
   const response = await fetch(apiUrl, {
     method: 'POST',
@@ -78,7 +82,12 @@ export const generateRefundInvoice = async (
     const config = getSzamlazzConfig();
     const xmlData = buildStornoXML(data, config, originalInvoiceNumber);
 
-    const invoiceNumber = await callSzamlazzAPI(xmlData, config.apiUrl);
+    // Storno invoices use a different form field name
+    const invoiceNumber = await callSzamlazzAPI(
+      xmlData,
+      config.apiUrl,
+      'action-szamla_agent_st'
+    );
 
     console.log(
       `Refund invoice generated: ${invoiceNumber} (cancelling ${originalInvoiceNumber})`
