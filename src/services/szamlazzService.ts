@@ -64,6 +64,7 @@ const buildInvoiceXML = (
     <szamlaagentkulcs>${config.apiKey}</szamlaagentkulcs>
     <eszamla>${config.eInvoice}</eszamla>
     <szamlaLetoltes>false</szamlaLetoltes>
+    <valaszVerzio>1</valaszVerzio> 
   </beallitasok>
   <fejlec>
     <keltDatum>${new Date().toISOString().split("T")[0]}</keltDatum>
@@ -86,6 +87,7 @@ ${stornoXML}
     <telepules>${data.billingAddress.city}</telepules>
     <cim>${data.billingAddress.address}</cim>
     <email>${data.billingAddress.email}</email>
+    <sendEmail>true</sendEmail>
     <adoalany>0</adoalany>
   </vevo>
   <tetelek>

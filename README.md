@@ -22,12 +22,14 @@ Automated invoice generation for Stripe Paylink payments → Számlázz.hu → G
 ## Quick Start
 
 ### 1. Install
+
 ```bash
 npm install
 cp .env.example .env
 ```
 
 ### 2. Configure Environment
+
 ```bash
 # Stripe
 STRIPE_SECRET_KEY=sk_live_...
@@ -50,12 +52,15 @@ NODE_ENV=production
 ```
 
 ### 3. Stripe Product Metadata
+
 Add to each product:
+
 - `vat_rate`: `5`, `18`, or `27` **(required)**
 - `vat_type`: Auto-inferred if not provided (27→AAM, 18→KULLA, 5→MAA)
 - `sheet_name`: Custom Sheet tab (optional, default: `Sheet1`)
 
 Example:
+
 ```json
 {
   "vat_rate": "27",
@@ -64,6 +69,7 @@ Example:
 ```
 
 ### 4. Google Sheets Setup
+
 1. Create Sheet with headers:
    ```
    Dátum | Vásárló neve | Email | Összeg | Termék | Darabszám | ÁFA | Cím | Számla szám | Számla státusz | Stripe Payment ID
@@ -73,6 +79,7 @@ Example:
 4. Add credentials JSON to `.env`
 
 ### 5. Stripe Webhook
+
 1. Dashboard → Developers → Webhooks → Add endpoint
 2. URL: `https://your-domain.com/webhook/stripe`
 3. Events: `payment_intent.succeeded`, `charge.refunded`
@@ -81,6 +88,7 @@ Example:
 ### 6. Deploy
 
 **Railway (recommended):**
+
 ```bash
 # Push to GitHub
 git push origin main
@@ -92,6 +100,7 @@ git push origin main
 ```
 
 **Local dev:**
+
 ```bash
 npm run dev
 
@@ -102,12 +111,14 @@ stripe listen --forward-to localhost:3000/webhook/stripe
 ## Deployment Environments
 
 ### Production (Live)
+
 - **URL:** `https://your-app.up.railway.app`
 - **Stripe:** Live mode keys (`sk_live_...`)
 - **Számlázz.hu:** Live API key
 - **Branch:** `main`
 
 ### Staging (Test) - Recommended Setup
+
 Create a separate Railway project for testing:
 
 1. **New Railway project:** `stripe-invoice-staging`
@@ -124,6 +135,7 @@ Create a separate Railway project for testing:
 5. **Test safely** without affecting live invoices
 
 **Benefits:**
+
 - ✅ Test invoice generation with real API calls
 - ✅ No risk to production data
 - ✅ Same codebase, isolated environment
@@ -147,6 +159,7 @@ src/
 ## Workflow
 
 ### Payment
+
 1. Customer pays via Stripe Paylink
 2. Webhook: `payment_intent.succeeded`
 3. Add rows to Sheets (one per product, status: "Függőben")
@@ -155,6 +168,7 @@ src/
 6. Store `invoice_number` in Stripe metadata
 
 ### Refund
+
 1. Refund issued in Stripe
 2. Webhook: `charge.refunded`
 3. Generate storno invoice (references original invoice)
@@ -183,13 +197,13 @@ Prevents duplicate invoices during webhook retries:
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Duplicate invoices | Check Railway logs for idempotency layer failures |
-| Invoice not generated | Verify Számlázz.hu API key, product metadata `vat_rate` |
-| Sheets not updating | Service account needs Editor access to Sheet |
-| Webhook signature error | Update `STRIPE_WEBHOOK_SECRET` from Dashboard |
-| Storno fails | Original invoice number must exist in metadata |
+| Issue                   | Solution                                                |
+| ----------------------- | ------------------------------------------------------- |
+| Duplicate invoices      | Check Railway logs for idempotency layer failures       |
+| Invoice not generated   | Verify Számlázz.hu API key, product metadata `vat_rate` |
+| Sheets not updating     | Service account needs Editor access to Sheet            |
+| Webhook signature error | Update `STRIPE_WEBHOOK_SECRET` from Dashboard           |
+| Storno fails            | Original invoice number must exist in metadata          |
 
 ## Development
 
@@ -205,6 +219,34 @@ npm run build
 
 # Production
 npm start
+
+```
+
+## Fejlesztés staging branch-en
+
+```bash
+
+git checkout staging
+
+# ... kód módosítások ...
+
+git add .
+git commit -m "Feature: xyz"
+git push origin staging
+
+# → Staging Railway auto-deploy
+
+# 2. Tesztelés staging-en
+
+# Ellenőrizd, hogy minden működik
+
+# 3. Merge staging → main (production)
+
+git checkout main
+git merge staging
+git push origin main
+
+# → Production Railway auto-deploy
 ```
 
 ## Support
