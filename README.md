@@ -253,5 +253,5 @@ git push origin main
 
 - **User guide:** [STRIPE_SETUP.md](./STRIPE_SETUP.md)
 - **Stripe docs:** https://stripe.com/docs/webhooks
-- **Számlázz.hu API:** https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd
+- **Számlázz.hu API:** https://docs.szamlazz.hu/hu/agent
 - **Google Sheets API:** https://developers.google.com/sheets/api
