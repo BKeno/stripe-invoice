@@ -1,28 +1,20 @@
 import type Stripe from 'stripe';
 import { stripe } from '../config/stripe.js';
 import { mapStripeAddress } from '../utils/addressMapper.js';
-import { generateInvoice, generateRefundInvoice } from './szamlazzService.js';
+import { generateInvoice, generateRefundInvoice } from './szamlazz/index.js';
 import { appendRowToSheet, updateInvoiceStatus, checkRowExists } from './sheetsService.js';
-import type { InvoiceData, InvoiceLineItem, StripeCustomField, VATConfig } from '../types/index.js';
+import type { InvoiceData, InvoiceLineItem, StripeCustomField } from '../types/index.js';
 
-const getVATConfig = (productMetadata: Record<string, string>): VATConfig => {
-  // Try to get VAT config from product metadata
+const getVATRate = (productMetadata: Record<string, string>): number => {
   const vatRate = productMetadata.vat_rate;
-  const vatType = productMetadata.vat_type;
 
   if (vatRate) {
-    const rate = parseInt(vatRate, 10);
-    // If vat_type is provided, use it; otherwise infer from rate
-    const type = vatType || (rate === 27 ? 'AAM' : rate === 18 ? 'KULLA' : 'MAA');
-    return { rate, type };
+    return parseInt(vatRate, 10);
   }
 
   // Default fallback - should be configured per product
-  console.warn('No VAT rate configured in product metadata, using default 27% AAM');
-  return {
-    rate: 27,
-    type: 'AAM'
-  };
+  console.warn('No VAT rate configured in product metadata, using default 27%');
+  return 27;
 };
 
 export const handlePaymentSuccess = async (
@@ -34,8 +26,8 @@ export const handlePaymentSuccess = async (
   // (webhook payload may contain stale data from when the event was created)
   const freshPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
 
-  if (freshPaymentIntent.metadata.invoice_number || freshPaymentIntent.metadata.processing) {
-    console.log(`[IDEMPOTENCY] Invoice already exists or processing: ${freshPaymentIntent.metadata.invoice_number || 'processing'}`);
+  if (freshPaymentIntent.metadata.invoice_number) {
+    console.log(`[IDEMPOTENCY] Invoice already exists: ${freshPaymentIntent.metadata.invoice_number}`);
     return;
   }
 
@@ -78,8 +70,8 @@ export const handlePaymentSuccess = async (
     // Fetch product to get name and metadata
     const product = await stripe.products.retrieve(productId);
 
-    // Get VAT config
-    const vatConfig = getVATConfig(product.metadata);
+    // Get VAT rate
+    const vatRate = getVATRate(product.metadata);
 
     // Store first product's sheet name for the overall payment
     if (invoiceLineItems.length === 0) {
@@ -92,8 +84,7 @@ export const handlePaymentSuccess = async (
       quantity,
       unitPrice,
       amount,
-      vatRate: vatConfig.rate,
-      vatType: vatConfig.type
+      vatRate
     });
   }
 
@@ -107,13 +98,6 @@ export const handlePaymentSuccess = async (
     billingAddress,
     stripePaymentId: paymentIntent.id
   };
-
-  // Mark as processing to prevent duplicate webhook handling
-  await stripe.paymentIntents.update(paymentIntent.id, {
-    metadata: {
-      processing: 'true'
-    }
-  });
 
   // Add rows to Google Sheets first with pending status
   const sheetsEnabled = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SERVICE_ACCOUNT_JSON !== '{"type":"service_account","project_id":"..."}';
@@ -158,8 +142,7 @@ export const handlePaymentSuccess = async (
     // SECURITY LAYER 3: Store invoice number in Stripe metadata for idempotency
     await stripe.paymentIntents.update(paymentIntent.id, {
       metadata: {
-        invoice_number: invoiceNumber,
-        processing: '' // Clear processing flag
+        invoice_number: invoiceNumber
       }
     });
 
@@ -169,12 +152,6 @@ export const handlePaymentSuccess = async (
     if (sheetsEnabled) {
       await updateInvoiceStatus(paymentIntent.id, '', 'Hiba', firstSheetName);
     }
-    // Clear processing flag on error so it can be retried
-    await stripe.paymentIntents.update(paymentIntent.id, {
-      metadata: {
-        processing: ''
-      }
-    });
     throw err;
   }
 };
@@ -228,7 +205,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
     const amount = (lineItem.amount_total ?? 0) / 100;
 
     const product = await stripe.products.retrieve(productId);
-    const vatConfig = getVATConfig(product.metadata);
+    const vatRate = getVATRate(product.metadata);
 
     if (invoiceLineItems.length === 0) {
       firstSheetName = product.metadata.sheet_name || 'Sheet1';
@@ -240,8 +217,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
       quantity,
       unitPrice,
       amount,
-      vatRate: vatConfig.rate,
-      vatType: vatConfig.type
+      vatRate
     });
   }
 

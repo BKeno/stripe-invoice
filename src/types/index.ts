@@ -36,7 +36,6 @@ export interface InvoiceLineItem {
   unitPrice: number;
   amount: number;
   vatRate: number;
-  vatType: string;
 }
 
 export interface InvoiceData {
@@ -63,7 +62,3 @@ export interface SheetsRow {
   stripePaymentId: string;
 }
 
-export interface VATConfig {
-  rate: number;
-  type: string; // Számlázz.hu ÁFA típus kódja: AAM, TAM, etc.
-}

@@ -20,8 +20,7 @@ export const handleMockPaymentSuccess = async (
         quantity: 2,
         unitPrice: (paymentIntent.amount / 100) / 2,
         amount: paymentIntent.amount / 100,
-        vatRate: 27,
-        vatType: 'AAM'
+        vatRate: 27
       }
     ],
     billingAddress: {
