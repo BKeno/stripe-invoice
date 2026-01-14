@@ -5,12 +5,13 @@ Automated invoice generation for Stripe Paylink payments → Számlázz.hu → G
 ## Features
 
 - ✅ Real-time Stripe webhook processing (payment + refund)
-- ✅ Automatic Számlázz.hu invoice generation (paid invoices)
-- ✅ Storno invoice support with proper XML structure
+- ✅ Automatic Számlázz.hu invoice generation (standard + storno)
+- ✅ Smart payment filtering (skip non-invoice integrations like SevenRooms)
 - ✅ Google Sheets sync with multi-product line items
 - ✅ Multi-event support (separate Sheet tabs per product)
-- ✅ 4-layer idempotency protection (prevents duplicate invoices)
-- ✅ TypeScript + Express 5
+- ✅ 3-layer idempotency protection (prevents duplicate invoices)
+- ✅ Modular architecture (scalable for proforma, advance invoices)
+- ✅ TypeScript + Express 5 with native async error handling
 
 ## Tech Stack
 
@@ -51,12 +52,19 @@ PORT=3000
 NODE_ENV=production
 ```
 
-### 3. Stripe Product Metadata
+### 3. Stripe Payment Link Setup
 
-Add to each product:
+**Required Custom Fields** (Billing address - add to ALL invoice-enabled payment links):
+
+| Field        | Key        | Type    | Label               | Required |
+| ------------ | ---------- | ------- | ------------------- | -------- |
+| Irányítószám | `irnytszm` | Numeric | Irányítószám        | ✅       |
+| Város        | `vros`     | Text    | Város               | ✅       |
+| Cím          | `cm`       | Text    | Cím (utca, házszám) | ✅       |
+
+**Product Metadata** (Add to each Stripe product):
 
 - `vat_rate`: `5`, `18`, or `27` **(required)**
-- `vat_type`: Auto-inferred if not provided (27→AAM, 18→KULLA, 5→MAA)
 - `sheet_name`: Custom Sheet tab (optional, default: `Sheet1`)
 
 Example:
@@ -67,6 +75,8 @@ Example:
   "sheet_name": "Event_Jan_2026"
 }
 ```
+
+**Important:** Payment links WITHOUT `irnytszm` custom field will be **automatically skipped** (e.g., SevenRooms integrations).
 
 ### 4. Google Sheets Setup
 
@@ -145,16 +155,33 @@ Create a separate Railway project for testing:
 
 ```
 src/
-├── config/          # Stripe, environment
-├── controllers/     # Webhook handlers
+├── config/
+│   └── stripe.ts              # Stripe client initialization
+├── controllers/
+│   └── webhookController.ts   # Webhook entry point
 ├── services/
-│   ├── webhookService.ts      # Main webhook logic
-│   ├── szamlazzService.ts     # Számlázz.hu XML API
+│   ├── webhookService.ts      # Main payment/refund logic
+│   ├── szamlazz/              # Modular Számlázz.hu service
+│   │   ├── config.ts          # Configuration + XML settings
+│   │   ├── xml.ts             # XML builders (invoice + storno)
+│   │   └── index.ts           # Public API + HTTP client
 │   └── sheetsService.ts       # Google Sheets sync
-├── middlewares/     # Signature verification, error handling
-├── utils/           # Address mapper, errors
-└── types/           # TypeScript interfaces
+├── middlewares/
+│   ├── verifyWebhook.ts       # Stripe signature verification
+│   └── errorHandler.ts        # Express 5 error handling
+├── utils/
+│   ├── addressMapper.ts       # Custom fields → billing address
+│   └── errors.ts              # Custom error classes
+└── types/
+    └── index.ts               # TypeScript interfaces
 ```
+
+**Key Design Decisions:**
+
+- **Modular Számlázz.hu service:** Separated config, XML builders, and API calls for future invoice types (proforma, advance)
+- **Express 5 error handling:** No try-catch in controllers, central error handler
+- **3-layer idempotency:** Fresh metadata check + invoice_number + Sheet duplicate check
+- **Smart payment filtering:** Skip non-invoice payments (missing `irnytszm` field)
 
 ## Workflow
 
@@ -162,48 +189,64 @@ src/
 
 1. Customer pays via Stripe Paylink
 2. Webhook: `payment_intent.succeeded`
-3. Add rows to Sheets (one per product, status: "Függőben")
-4. Generate invoice (Számlázz.hu)
-5. Update Sheets with invoice number (status: "Kiállítva")
-6. Store `invoice_number` in Stripe metadata
+3. **Filter:** Check if `irnytszm` custom field exists → skip if not (SevenRooms, etc.)
+4. **Idempotency check:** Fetch fresh PaymentIntent, check if `invoice_number` exists → skip if duplicate
+5. Add rows to Sheets (one per product, status: "Függőben")
+6. Generate invoice (Számlázz.hu XML API)
+7. Update Sheets with invoice number (status: "Kiállítva")
+8. Store `invoice_number` in Stripe metadata
 
 ### Refund
 
 1. Refund issued in Stripe
 2. Webhook: `charge.refunded`
-3. Generate storno invoice (references original invoice)
-4. Update Sheets (status: "Sztornózva")
-5. Store `refund_invoice_number` in metadata
+3. **Filter:** Check if original `invoice_number` exists in metadata → skip if not (no invoice to cancel)
+4. **Idempotency check:** Check if `refund_invoice_number` exists → skip if duplicate
+5. Generate storno invoice using `xmlszamlast` namespace (references original invoice)
+6. Update Sheets (status: "Sztornózva")
+7. Store `refund_invoice_number` in metadata
 
 ## Security & Reliability
 
-### 4-Layer Idempotency Protection
+### 3-Layer Idempotency Protection
 
 Prevents duplicate invoices during webhook retries:
 
-1. **Fresh PaymentIntent check:** Fetch current metadata (webhook payload is stale)
-2. **Processing flag:** Set immediately to block concurrent webhooks
-3. **Sheets duplicate check:** Verify Payment ID doesn't exist
-4. **Metadata storage:** Save `invoice_number` after success
+1. **Fresh PaymentIntent check:** Fetch current metadata (webhook payload may be stale)
+2. **Invoice number check:** Skip if `invoice_number` already exists in metadata
+3. **Sheets duplicate check:** Verify Payment ID doesn't exist before creating rows
 
-**Result:** Safe webhook retries, no duplicate invoices.
+**Result:** Safe webhook retries, no duplicate invoices. Simplified from 4-layer (removed redundant `processing` flag).
 
 ### Számlázz.hu Invoice Features
 
+**Standard Invoice (xmlszamla):**
+
 - **Paid invoices:** `<fizetve>true</fizetve>` (no payment reminder emails)
-- **Storno structure:** `<sztornozas>true</sztornozas>` + `<sztornozott>ORIGINAL_NUMBER</sztornozott>`
-- **VAT config:** Auto-inferred from rate or explicit via product metadata
+- **Auto email:** `<sendEmail>true</sendEmail>` (e-invoice sent by Számlázz.hu)
+- **Tax subject:** `<adoalany>-1</adoalany>` (private person, non-tax-subject)
 - **Multi-line items:** Each product as separate `<tetel>` in XML
+- **Response version:** `<valaszVerzio>1</valaszVerzio>` (ensures header-based response parsing)
+
+**Storno Invoice (xmlszamlast):**
+
+- **Different namespace:** Uses `xmlszamlast` with simplified structure
+- **No line items needed:** Számlázz.hu automatically copies from original invoice
+- **Form field:** `action-szamla_agent_st` (not `action-xmlagentxmlfile`)
+- **Type:** `<tipus>SS</tipus>` (storno számla)
 
 ## Troubleshooting
 
-| Issue                   | Solution                                                |
-| ----------------------- | ------------------------------------------------------- |
-| Duplicate invoices      | Check Railway logs for idempotency layer failures       |
-| Invoice not generated   | Verify Számlázz.hu API key, product metadata `vat_rate` |
-| Sheets not updating     | Service account needs Editor access to Sheet            |
-| Webhook signature error | Update `STRIPE_WEBHOOK_SECRET` from Dashboard           |
-| Storno fails            | Original invoice number must exist in metadata          |
+| Issue                       | Solution                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Duplicate invoices          | Check Railway logs for idempotency layer failures                             |
+| Invoice not generated       | Verify Számlázz.hu API key, product metadata `vat_rate`, payment link fields  |
+| Payment skipped             | Ensure payment link has `irnytszm` custom field (required for invoice)        |
+| Refund skipped              | Original payment must have `invoice_number` in metadata                       |
+| Sheets not updating         | Service account needs Editor access to Sheet                                  |
+| Webhook signature error     | Update `STRIPE_WEBHOOK_SECRET` from Dashboard                                 |
+| Storno XML error            | Check original invoice number format, verify `action-szamla_agent_st` is used |
+| SevenRooms creating invoice | Correct - SevenRooms payments should NOT have `irnytszm` field                |
 
 ## Development
 
