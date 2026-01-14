@@ -63,8 +63,7 @@ const buildInvoiceXML = (
   <beallitasok>
     <szamlaagentkulcs>${config.apiKey}</szamlaagentkulcs>
     <eszamla>${config.eInvoice}</eszamla>
-    <szamlaLetoltes>true</szamlaLetoltes>
-    <szamlaLetoltesPld>1</szamlaLetoltesPld>
+    <szamlaLetoltes>false</szamlaLetoltes>
   </beallitasok>
   <fejlec>
     <keltDatum>${new Date().toISOString().split("T")[0]}</keltDatum>
@@ -172,7 +171,9 @@ export const generateRefundInvoice = async (
 
     const invoiceNumber = await callSzamlazzAPI(xmlData);
 
-    console.log(`Refund invoice generated: ${invoiceNumber} (cancelling ${originalInvoiceNumber})`);
+    console.log(
+      `Refund invoice generated: ${invoiceNumber} (cancelling ${originalInvoiceNumber})`
+    );
     return invoiceNumber;
   } catch (err) {
     const error = err as Error;
