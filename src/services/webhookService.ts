@@ -55,6 +55,13 @@ export const handlePaymentSuccess = async (
   const customerName = checkoutSession.customer_details?.name ?? '';
   const customerEmail = checkoutSession.customer_details?.email ?? '';
 
+  // SKIP payments without irányítószám (irnytszm) - not from invoice-enabled payment links
+  const hasIrnytszmField = customFields.some(field => field.key === 'irnytszm');
+  if (!hasIrnytszmField) {
+    console.log(`[SKIP] No 'irnytszm' custom field - payment not from invoice-enabled payment link (likely SevenRooms or other integration)`);
+    return;
+  }
+
   const billingAddress = mapStripeAddress(customFields, customerName, customerEmail);
 
   // Process all line items
@@ -162,17 +169,17 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
   const paymentIntentId = refund.payment_intent as string;
   const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
+  // SKIP refunds for payments that never had an invoice (non-invoice-enabled payment links)
+  const originalInvoiceNumber = paymentIntent.metadata.invoice_number;
+  if (!originalInvoiceNumber) {
+    console.log(`[SKIP] No original invoice found - payment was not from invoice-enabled payment link`);
+    return;
+  }
+
   // IDEMPOTENCY: Check if refund already processed
   if (paymentIntent.metadata.refund_invoice_number) {
     console.log(`[IDEMPOTENCY] Refund invoice already exists: ${paymentIntent.metadata.refund_invoice_number}`);
     return;
-  }
-
-  // Get original invoice number from metadata
-  const originalInvoiceNumber = paymentIntent.metadata.invoice_number;
-
-  if (!originalInvoiceNumber) {
-    throw new Error('Original invoice number not found in payment intent metadata');
   }
 
   // Fetch original payment data
