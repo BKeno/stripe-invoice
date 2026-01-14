@@ -1,285 +1,215 @@
 # Stripe Invoice Automation
 
-Automated invoice generation system for Stripe Paylink payments using Számlázz.hu API with Google Sheets synchronization.
+Automated invoice generation for Stripe Paylink payments → Számlázz.hu → Google Sheets sync.
 
 ## Features
 
-- Real-time Stripe webhook processing
-- Automatic invoice generation via Számlázz.hu API
-- Refund/storno invoice handling
-- Google Sheets sync for sales tracking
-- **Multi-event support** - each event/product can have its own Sheet tab
-- **3-layer idempotency protection** against duplicate invoices
-- Webhook signature verification for security
-- TypeScript + Express 5 backend
+- ✅ Real-time Stripe webhook processing (payment + refund)
+- ✅ Automatic Számlázz.hu invoice generation (paid invoices)
+- ✅ Storno invoice support with proper XML structure
+- ✅ Google Sheets sync with multi-product line items
+- ✅ Multi-event support (separate Sheet tabs per product)
+- ✅ 4-layer idempotency protection (prevents duplicate invoices)
+- ✅ TypeScript + Express 5
+
+## Tech Stack
+
+- **Backend:** Node.js, Express 5, TypeScript
+- **APIs:** Stripe, Számlázz.hu Agent XML, Google Sheets API v4
+- **Deployment:** Railway (recommended), Render, or VPS
+- **Security:** Webhook signature verification, environment variables
+
+## Quick Start
+
+### 1. Install
+```bash
+npm install
+cp .env.example .env
+```
+
+### 2. Configure Environment
+```bash
+# Stripe
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Számlázz.hu
+SZAMLAZZ_API_KEY=...
+SZAMLAZZ_E_INVOICE=true
+SZAMLAZZ_ISSUER_NAME=Your Company
+SZAMLAZZ_BANK=UniCredit Bank Zrt.; BACX HU HB
+SZAMLAZZ_BANK_ACCOUNT=HU72...
+
+# Google Sheets
+GOOGLE_SHEETS_ID=1abc...xyz
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+
+# Server
+PORT=3000
+NODE_ENV=production
+```
+
+### 3. Stripe Product Metadata
+Add to each product:
+- `vat_rate`: `5`, `18`, or `27` **(required)**
+- `vat_type`: Auto-inferred if not provided (27→AAM, 18→KULLA, 5→MAA)
+- `sheet_name`: Custom Sheet tab (optional, default: `Sheet1`)
+
+Example:
+```json
+{
+  "vat_rate": "27",
+  "sheet_name": "Event_Jan_2026"
+}
+```
+
+### 4. Google Sheets Setup
+1. Create Sheet with headers:
+   ```
+   Dátum | Vásárló neve | Email | Összeg | Termék | Darabszám | ÁFA | Cím | Számla szám | Számla státusz | Stripe Payment ID
+   ```
+2. Create GCP service account with Sheets API access
+3. Share Sheet with service account email (Editor role)
+4. Add credentials JSON to `.env`
+
+### 5. Stripe Webhook
+1. Dashboard → Developers → Webhooks → Add endpoint
+2. URL: `https://your-domain.com/webhook/stripe`
+3. Events: `payment_intent.succeeded`, `charge.refunded`
+4. Copy signing secret to `.env`
+
+### 6. Deploy
+
+**Railway (recommended):**
+```bash
+# Push to GitHub
+git push origin main
+
+# Railway Dashboard:
+# - New Project → Deploy from GitHub
+# - Add environment variables
+# - Auto-deploy on push
+```
+
+**Local dev:**
+```bash
+npm run dev
+
+# Test webhooks with Stripe CLI:
+stripe listen --forward-to localhost:3000/webhook/stripe
+```
+
+## Deployment Environments
+
+### Production (Live)
+- **URL:** `https://your-app.up.railway.app`
+- **Stripe:** Live mode keys (`sk_live_...`)
+- **Számlázz.hu:** Live API key
+- **Branch:** `main`
+
+### Staging (Test) - Recommended Setup
+Create a separate Railway project for testing:
+
+1. **New Railway project:** `stripe-invoice-staging`
+2. **Connect same GitHub repo** → Deploy `main` branch
+3. **Environment variables (TEST keys):**
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_...
+   STRIPE_WEBHOOK_SECRET=whsec_... (from staging webhook)
+   SZAMLAZZ_API_KEY=<test-agent-key>
+   GOOGLE_SHEETS_ID=<test-sheet-id>
+   # ... (same structure, test values)
+   ```
+4. **Stripe webhook endpoint:** `https://your-app-staging.up.railway.app/webhook/stripe`
+5. **Test safely** without affecting live invoices
+
+**Benefits:**
+- ✅ Test invoice generation with real API calls
+- ✅ No risk to production data
+- ✅ Same codebase, isolated environment
+- ✅ Quick toggle between staging/production
 
 ## Architecture
 
 ```
 src/
-├── config/          # Stripe, environment config
-├── controllers/     # Webhook request handlers
-├── services/        # Business logic (Stripe, Számlázz.hu, Sheets)
-├── middlewares/     # Auth, error handling
-├── utils/           # Address mapping, error classes
+├── config/          # Stripe, environment
+├── controllers/     # Webhook handlers
+├── services/
+│   ├── webhookService.ts      # Main webhook logic
+│   ├── szamlazzService.ts     # Számlázz.hu XML API
+│   └── sheetsService.ts       # Google Sheets sync
+├── middlewares/     # Signature verification, error handling
+├── utils/           # Address mapper, errors
 └── types/           # TypeScript interfaces
-```
-
-## Setup
-
-### 1. Install Dependencies
-
-```bash
-npm install
-```
-
-### 2. Configure Environment Variables
-
-Copy `.env.example` to `.env` and fill in:
-
-```bash
-cp .env.example .env
-```
-
-**Required variables:**
-
-- `STRIPE_SECRET_KEY` - Stripe API key (sk_...)
-- `STRIPE_WEBHOOK_SECRET` - Webhook signing secret (whsec_...)
-- `SZAMLAZZ_API_KEY` - Számlázz.hu API key
-- `SZAMLAZZ_ISSUER_NAME` - Your company name
-- `GOOGLE_SHEETS_ID` - Google Sheets spreadsheet ID
-- `GOOGLE_SERVICE_ACCOUNT_JSON` - Service account credentials JSON
-
-### 3. Setup Stripe Webhook
-
-1. Go to Stripe Dashboard → Developers → Webhooks
-2. Add endpoint: `https://your-domain.com/webhook/stripe`
-3. Select events:
-   - `payment_intent.succeeded`
-   - `charge.refunded`
-4. Copy webhook signing secret to `.env`
-
-### 4. Configure Stripe Products
-
-Add metadata to each Stripe Product:
-
-- `vat_rate` - ÁFA kulcs (5, 18, vagy 27) **[KÖTELEZŐ]**
-- `vat_type` - Számlázz.hu ÁFA kód **[OPCIONÁLIS]**
-  - Ha nincs megadva: automatikusan beállítja a rate alapján
-  - 27% → `AAM`, 18% → `KULLA`, 5% → `MAA`
-- `sheet_name` - Google Sheets lap neve az adott rendezvényhez **[OPCIONÁLIS]**
-  - Ha nincs megadva: `Sheet1` (alapértelmezett)
-
-Example (minimális):
-```json
-{
-  "vat_rate": "27",
-  "sheet_name": "Mulasbuda_0127"
-}
-```
-
-Example (explicit vat_type):
-```json
-{
-  "vat_rate": "27",
-  "vat_type": "AAM",
-  "sheet_name": "Mulasbuda_0127"
-}
-```
-
-**Részletes útmutató:** Lásd [STRIPE_SETUP.md](./STRIPE_SETUP.md)
-
-### 5. Setup Google Sheets
-
-1. Create a new Google Sheet
-2. Add headers in first row:
-   ```
-   Dátum | Vásárló neve | Email | Összeg | Termék | Darabszám | ÁFA | Cím | Számla szám | Számla státusz | Stripe Payment ID
-   ```
-3. Create a Google Cloud service account
-4. Share the sheet with service account email
-5. Download credentials JSON and add to `.env`
-
-### 6. Configure Custom Fields in Stripe Paylink
-
-Ensure your Stripe payment links have these custom fields:
-
-- `irnytszm` (Irányítószám) - Numeric, 4 characters
-- `vros` (Város) - Text
-- `cm` (Cím) - Text
-
-### 7. Run Development Server
-
-```bash
-npm run dev
-```
-
-Server will start on `http://localhost:3000`
-
-### 8. Test Webhook Locally (Optional)
-
-Use Stripe CLI for local testing:
-
-```bash
-stripe listen --forward-to localhost:3000/webhook/stripe
 ```
 
 ## Workflow
 
-### Payment Flow
+### Payment
+1. Customer pays via Stripe Paylink
+2. Webhook: `payment_intent.succeeded`
+3. Add rows to Sheets (one per product, status: "Függőben")
+4. Generate invoice (Számlázz.hu)
+5. Update Sheets with invoice number (status: "Kiállítva")
+6. Store `invoice_number` in Stripe metadata
 
-1. Customer completes Stripe Paylink payment
-2. Stripe sends `payment_intent.succeeded` webhook
-3. System adds row to Google Sheets (status: "Függőben")
-4. Invoice generated via Számlázz.hu
-5. Sheet updated with invoice number (status: "Kiállítva")
-6. Invoice number stored in Stripe payment metadata
-
-### Refund Flow
-
-1. Refund issued in Stripe Dashboard
-2. Stripe sends `charge.refunded` webhook
-3. System generates storno invoice
-4. Sheet updated (status: "Sztornózva")
-
-## Google Sheets Columns
-
-| Column | Description |
-|--------|-------------|
-| Dátum | Payment date |
-| Vásárló neve | Customer name |
-| Email | Customer email |
-| Összeg | Amount with currency |
-| Termék | Product name from Stripe |
-| Darabszám | Quantity purchased |
-| ÁFA | VAT rate (5%, 18%, 27%) |
-| Cím | Full billing address |
-| Számla szám | Számlázz.hu invoice number |
-| Számla státusz | Invoice status |
-| Stripe Payment ID | Payment Intent ID |
-
-## Invoice Statuses
-
-- **Függőben** - Payment received, invoice pending
-- **Kiállítva** - Invoice successfully generated
-- **Sztornózva** - Refund processed, storno issued
-- **Hiba** - Invoice generation failed
-
-## Deployment
-
-### Production Checklist
-
-1. Set `NODE_ENV=production`
-2. Use HTTPS endpoint for webhooks
-3. Deploy to server with public URL
-4. Update Stripe webhook endpoint URL
-5. Test with Stripe test mode first
-6. Monitor logs for errors
-
-### Recommended Hosting
-
-- Railway
-- Render
-- Heroku
-- VPS with nginx reverse proxy
+### Refund
+1. Refund issued in Stripe
+2. Webhook: `charge.refunded`
+3. Generate storno invoice (references original invoice)
+4. Update Sheets (status: "Sztornózva")
+5. Store `refund_invoice_number` in metadata
 
 ## Security & Reliability
 
-### Idempotency Protection (3 Layers)
+### 4-Layer Idempotency Protection
 
-A rendszer **3 különböző szinten** védi a duplikált számlák létrehozását webhook újrapróbálkozás esetén:
+Prevents duplicate invoices during webhook retries:
 
-#### **Layer 1: Stripe Metadata Check**
-```typescript
-if (paymentIntent.metadata.invoice_number) {
-  console.log('[IDEMPOTENCY] Invoice already exists');
-  return; // Skip processing
-}
-```
-- Ellenőrzi, hogy a Stripe Payment Intent metadata-jában van-e már `invoice_number`
-- Ha igen: azonnal kilép, nem generál újabb számlát
-- **Leggyorsabb** védelem, API hívás nélkül
+1. **Fresh PaymentIntent check:** Fetch current metadata (webhook payload is stale)
+2. **Processing flag:** Set immediately to block concurrent webhooks
+3. **Sheets duplicate check:** Verify Payment ID doesn't exist
+4. **Metadata storage:** Save `invoice_number` after success
 
-#### **Layer 2: Google Sheets Duplicate Check**
-```typescript
-const rowExists = await checkRowExists(paymentIntent.id, sheetName);
-if (rowExists) {
-  console.log('[IDEMPOTENCY] Row already exists in sheet');
-  return;
-}
-```
-- Ellenőrzi a Google Sheets-ben, hogy létezik-e már sor az adott Payment ID-val
-- Ha igen: azonnal kilép
-- **Második védvonal**, ha a Stripe metadata valamilyen okból nem frissült
+**Result:** Safe webhook retries, no duplicate invoices.
 
-#### **Layer 3: Metadata Update After Invoice**
-```typescript
-await stripe.paymentIntents.update(paymentIntent.id, {
-  metadata: { invoice_number: invoiceNumber }
-});
-```
-- Számla generálás után **azonnal** elmenti a számlaszámot a Stripe-ban
-- Ez biztosítja a Layer 1 működését a következő újrapróbálkozáskor
-- Perzisztens, megmarad a Stripe-ban
+### Számlázz.hu Invoice Features
 
-### Webhook Retry Handling
-
-**Stripe automatikus újrapróbálkozás:**
-- Sikertelen webhook esetén Stripe ~1 órán keresztül többször újrapróbálkozik
-- Exponenciális backoff: 5s, 30s, 2m, 15m, 1h
-- A 3-layer idempotency védelem biztosítja, hogy nem keletkeznek duplikált számlák
-
-**Manuális újrapróbálkozás:**
-Ha valamilyen hiba történt és manuálisan kell újrapróbálni:
-1. Stripe Dashboard → Webhooks → Event log
-2. Válaszd ki a sikertelen eseményt
-3. **Resend event** - biztonságos, nem fog duplikálni
-
-### Other Security Measures
-
-- Webhook signature verification enabled
-- API keys in environment variables
-- HTTPS enforced in production
-- Express 5 native async error handling
-- Input validation on all webhook events
+- **Paid invoices:** `<fizetve>true</fizetve>` (no payment reminder emails)
+- **Storno structure:** `<sztornozas>true</sztornozas>` + `<sztornozott>ORIGINAL_NUMBER</sztornozott>`
+- **VAT config:** Auto-inferred from rate or explicit via product metadata
+- **Multi-line items:** Each product as separate `<tetel>` in XML
 
 ## Troubleshooting
 
-**Invoice not generated:**
-- Check Számlázz.hu API credentials
-- Verify product metadata has VAT config
-- Check logs for error messages
-
-**Sheets not updating:**
-- Verify service account has edit access
-- Check GOOGLE_SHEETS_ID is correct
-- Ensure credentials JSON is valid
-
-**Webhook failing:**
-- Verify webhook secret matches Stripe
-- Check endpoint is publicly accessible
-- Review Stripe webhook logs in Dashboard
+| Issue | Solution |
+|-------|----------|
+| Duplicate invoices | Check Railway logs for idempotency layer failures |
+| Invoice not generated | Verify Számlázz.hu API key, product metadata `vat_rate` |
+| Sheets not updating | Service account needs Editor access to Sheet |
+| Webhook signature error | Update `STRIPE_WEBHOOK_SECRET` from Dashboard |
+| Storno fails | Original invoice number must exist in metadata |
 
 ## Development
 
 ```bash
-# Run with auto-reload
+# Dev server (auto-reload)
 npm run dev
 
 # Type check
 npm run typecheck
 
-# Build for production
+# Build
 npm run build
 
-# Run production build
+# Production
 npm start
 ```
 
-## TODO
+## Support
 
-- [ ] Add email notifications for failed invoices
-- [ ] Dashboard for viewing invoice status
-- [ ] Retry logic for failed Számlázz.hu requests
-- [ ] Support partial refunds
-- [ ] Multi-currency invoice support
+- **User guide:** [STRIPE_SETUP.md](./STRIPE_SETUP.md)
+- **Stripe docs:** https://stripe.com/docs/webhooks
+- **Számlázz.hu API:** https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd
+- **Google Sheets API:** https://developers.google.com/sheets/api

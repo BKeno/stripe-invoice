@@ -1,153 +1,118 @@
-# Stripe Setup Guide
+# Stripe Setup Guide (User Guide)
 
-Ez az útmutató lépésről lépésre bemutatja, hogyan kell beállítani a Stripe-ot az automatikus számlázáshoz.
+Lépésről lépésre útmutató az automatikus számlázás beállításához.
 
-## 1. Payment Link Custom Fields beállítása
+## 1. Payment Link Custom Fields
 
-Minden Payment Link-hez add hozzá a következő **Custom Fields**-t (kötelező):
+Minden Payment Link-hez **kötelezően** add hozzá a következő custom fields-eket (számlázási címadatok):
 
-### Custom Fields lista:
+| Mező | Key | Type | Label | Kötelező |
+|------|-----|------|-------|----------|
+| Irányítószám | `irnytszm` | Numeric | Irányítószám | ✅ |
+| Város | `vros` | Text | Város | ✅ |
+| Cím | `cm` | Text | Cím (utca, házszám) | ✅ |
 
-1. **Irányítószám**
-
-   - Key: `irnytszm`
-   - Type: `Numeric`
-   - Label: `Irányítószám`
-   - Required: ✅
-
-2. **Város**
-
-   - Key: `vros`
-   - Type: `Text`
-   - Label: `Város`
-   - Required: ✅
-
-3. **Cím**
-   - Key: `cm`
-   - Type: `Text`
-   - Label: `Cím (utca, házszám)`
-   - Required: ✅
-
-### Hogyan add hozzá:
-
-1. Stripe Dashboard → **Payment Links**
-2. Válassz ki egy Payment Link-et vagy hozz létre újat
-3. **Collect additional information** → **Add custom field**
-4. Írd be a fenti adatokat mindhárom mezőhöz
+**Hogyan:**
+1. Stripe Dashboard → **Payment Links** → Válassz ki egyet
+2. **Collect additional information** → **Add custom field**
+3. Írd be a fenti key-eket és beállításokat
 
 ---
 
-## 2. Product Metadata beállítása
+## 2. Product Metadata (ÁFA + Sheet lap)
 
-Minden Product-hoz add hozzá a következő **Metadata** mezőket:
+Minden Product-hoz add hozzá:
 
-### Kötelező metadata:
+### Kötelező:
+- **`vat_rate`**: ÁFA kulcs (`5`, `18`, vagy `27`)
 
-1. **vat_rate** - ÁFA kulcs (%)
-   - Key: `vat_rate`
-   - Value: `5` vagy `18` vagy `27`
-   - Példa: `27`
+### Opcionális:
+- **`vat_type`**: Számlázz.hu ÁFA kód (ha nincs → auto-inferred)
+  - 27% → `AAM`, 18% → `KULLA`, 5% → `MAA`
+- **`sheet_name`**: Google Sheets lap neve (ha nincs → `Sheet1`)
 
-### Opcionális metadata:
+**Minimális példa:**
+```
+vat_rate: 27
+sheet_name: Event_Jan_2026
+```
 
-2. **vat_type** - ÁFA típus kód
-
-   - Key: `vat_type`
-   - Value: `AAM` (általános ÁFA mérték) vagy más Számlázz.hu ÁFA kód
-   - Példa: `AAM`
-   - **Ha nincs megadva:** automatikusan beállítja a rate alapján:
-     - 27% → `AAM`
-     - 18% → `KULLA`
-     - 5% → `MAA`
-
-3. **sheet_name** - Google Sheets lap neve
-   - Key: `sheet_name`
-   - Value: A Sheet lap neve, ahová az adott rendezvény adatai kerüljenek
-   - Példa: `Mulasbuda_0127`
-   - Ha nincs megadva: `Sheet1` (alapértelmezett)
-
-### Hogyan add hozzá:
-
-1. Stripe Dashboard → **Products**
-2. Válassz ki egy Product-ot
-3. Görgess le a **Metadata** szekcióhoz
-4. Kattints **Add metadata**
-5. Írd be a fenti Key-Value párokat
+**Hogyan:**
+1. Dashboard → **Products** → Válassz ki egyet
+2. Görgess le a **Metadata** szekcióhoz
+3. **Add metadata** → Írd be a key-value párokat
 
 ---
 
-## 3. Webhook beállítása (már megtörtént)
+## 3. Több rendezvény kezelése
 
-Ha még nem állítottad be:
+Minden új rendezvényhez:
+1. Hozz létre új **Product**-ot
+2. Állítsd be a metadata-t (minimálisan `vat_rate` + `sheet_name`)
+3. Hozz létre **Payment Link**-et
+4. Add hozzá a 3 custom field-et
 
-1. Stripe Dashboard → **Developers** → **Webhooks**
-2. **Add endpoint**
-3. Endpoint URL: `https://your-domain.com/webhook/stripe`
-4. Events to send:
+**Példa:** Két event külön Sheet tab-ra kerül:
+```
+Product 1:
+  vat_rate: 27
+  sheet_name: Mulasbuda_0127
+
+Product 2:
+  vat_rate: 27
+  sheet_name: NYE_Party_1231
+```
+
+---
+
+## 4. Webhook beállítása
+
+1. Dashboard → **Developers** → **Webhooks** → **Add endpoint**
+2. URL: `https://your-railway-app.up.railway.app/webhook/stripe`
+3. Events:
    - `payment_intent.succeeded`
    - `charge.refunded`
+4. Másold ki a **webhook signing secret**-et → Railway env változóba
 
 ---
 
-## 4. Példa konfiguráció
+## 5. Tesztelés (staging környezet)
 
-### Event: Mulasbuda! 01/27 GIRLZ
+**Ajánlott:** Készíts külön Railway projektet teszteléshez!
 
-**Payment Link Custom Fields:**
+1. Railway: Hozz létre `stripe-invoice-staging` projektet
+2. Használj **Stripe test mode** kulcsokat
+3. Számlázz.hu **test agent key**
+4. Külön teszt Sheet
+5. Stripe webhook endpoint: `https://your-app-staging.up.railway.app/webhook/stripe`
 
-- ✅ `irnytszm` (Irányítószám)
-- ✅ `vros` (Város)
-- ✅ `cm` (Cím)
-
-**Product Metadata (minimális):**
-
-```
-vat_rate: 27
-sheet_name: Mulasbuda_0127
-```
-
-Így működik:
-
-- Vásárláskor a rendszer bekéri a címadatokat
-- Számlát generál 27% ÁFA-val (AAM típussal, automatikusan beállítva)
-- Az adatokat a `Mulasbuda_0127` sheet-re menti
+**Előny:** Biztonságosan tesztelhetsz anélkül, hogy az éles számlák érintve lennének.
 
 ---
 
-## 5. Több rendezvény kezelése
+## 6. ÁFA referencia
 
-Minden rendezvényhez:
-
-1. Hozz létre új **Product**-ot Stripe-ban
-2. Állítsd be a metadata-t:
-   - `vat_rate`: ÁFA kulcs (5, 18, vagy 27) **[KÖTELEZŐ]**
-   - `sheet_name`: Egyedi lap név (pl. `Event_0215`) **[OPCIONÁLIS]**
-3. Hozz létre **Payment Link**-et a Product-hoz
-4. Add hozzá a 3 custom field-et (irnytszm, vros, cm)
-
-**Minimális konfiguráció példa:**
-
-```
-vat_rate: 27
-sheet_name: Event_0215
-```
-
-Kész! Minden rendezvény külön sheet-re fog kerülni.
+| ÁFA % | Mikor használd | Számlázz.hu kód |
+|-------|----------------|-----------------|
+| 5% | Könyv, újság, gyógyszer | MAA |
+| 18% | Élelmiszer, szállás | KULLA |
+| 27% | Általános (szolgáltatás, jegy) | AAM |
 
 ---
 
-## ÁFA kulcsok referencia
+## Gyakori hibák
 
-| ÁFA % | Mikor használd                       |
-| ----- | ------------------------------------ |
-| 5%    | Könyv, újság, gyógyszer              |
-| 18%   | Élelmiszer (többség), szállás        |
-| 27%   | Általános (szolgáltatás, jegy, stb.) |
-
-**Számlázz.hu ÁFA típus kódok:**
-
-- `AAM` - Általános ÁFA mérték (27%)
-- `KULLA` - 18%-os kulcs
-- `MAA` - 5%-os kulcs
+| Probléma | Megoldás |
+|----------|----------|
+| Számla nem készül | Ellenőrizd, hogy a Product metadata-ban van-e `vat_rate` |
+| Rossz Sheet lap | Állítsd be a `sheet_name` metadata-t a Product-ban |
+| Webhook fail | Ellenőrizd a Railway env változókat és a webhook endpoint URL-t |
+| Duplikált számla | A 4-layer idempotency automatikusan véd, nézd a log-okat |
 
 ---
+
+## Támogatás
+
+- **Technikai README:** [README.md](./README.md)
+- **Stripe Dashboard:** https://dashboard.stripe.com
+- **Számlázz.hu dokumentáció:** https://www.szamlazz.hu/szamla/docs/
