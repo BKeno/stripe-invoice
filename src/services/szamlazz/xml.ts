@@ -53,8 +53,8 @@ export const buildInvoiceXML = (
     <fizmod>Paylink</fizmod>
     <penznem>${data.currency.toUpperCase()}</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
-    <fizetve>true</fizetve>
     <elolegszamla>${isAdvanceInvoice}</elolegszamla>
+    <fizetve>true</fizetve>
   </fejlec>
   <elado>
     <bank>${config.bank}</bank>
