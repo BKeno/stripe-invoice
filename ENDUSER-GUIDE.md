@@ -34,8 +34,10 @@ Minden Product-hoz add hozzá:
 - **`service_fee_percentage`**: Szervizdíj % (ha van, pl. `15`)
   - Ha be van állítva, a termék ára **tartalmazza** a szervizdíjat
   - Számlán 2 tételként jelenik meg (Termék + Szervizdíj)
+  - **Automatikusan előlegszámlaként kerül kiállításra** (később végszámla kell)
+  - A számla száma automatikusan mentésre kerül a Stripe PaymentIntent metadata-jába (`invoice_number` mező)
   - Példa: Product ára 11,500 HUF, `service_fee_percentage: 15`
-    - Számla: "Jegy" 10,000 HUF + "Szervizdíj 27% ÁFA" 1,500 HUF
+    - Számla: "Jegy" 10,000 HUF + "Szervizdíj 27% ÁFA" 1,500 HUF (előlegszámla)
   - Sheet-en: teljes összeg (11,500 HUF, nem bontva szét)
 
 **Minimális példa (nincs szervizdíj):**
@@ -58,29 +60,6 @@ service_fee_percentage: 15
 1. Dashboard → **Products** → Válassz ki egyet
 2. Görgess le a **Metadata** szekcióhoz
 3. **Add metadata** → Írd be a key-value párokat
-
----
-
-## 3. Több rendezvény kezelése
-
-Minden új rendezvényhez:
-
-1. Hozz létre új **Product**-ot
-2. Állítsd be a metadata-t (minimálisan `vat_rate` + `sheet_name`)
-3. Hozz létre **Payment Link**-et
-4. Add hozzá a 3 custom field-et
-
-**Példa:** Két event külön Sheet tab-ra kerül:
-
-```
-Product 1:
-  vat_rate: 27
-  sheet_name: Mulasbuda_0127
-
-Product 2:
-  vat_rate: 27
-  sheet_name: NYE_Party_1231
-```
 
 ---
 

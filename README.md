@@ -70,6 +70,8 @@ NODE_ENV=production
 - `service_fee_percentage`: Service fee % (optional, e.g., `15`)
   - If set, product price **includes** the fee
   - Invoice: 2 line items (Product + Service Fee)
+  - **Automatically issued as advance invoice** (`<elolegszamla>true</elolegszamla>`)
+  - Invoice number stored in Stripe PaymentIntent metadata (`invoice_number` field)
   - Sheet: Full amount (not split)
 
 Example without service fee:
@@ -93,10 +95,12 @@ Example with service fee (15%):
 
 **How service fees work:**
 - Product price: 11,500 HUF with `service_fee_percentage: 15`
+- Invoice type: **Advance invoice** (előlegszámla)
 - Invoice line items:
   1. "Ticket" - 10,000 HUF (ÁFA: 27%)
   2. "Szervizdíj 27% ÁFA" - 1,500 HUF (ÁFA: 27%)
 - Sheet entry: "Ticket" - 11,500 HUF (full amount)
+- Stripe metadata: `invoice_number` = "ABC-2025-123" (automatically stored)
 
 **Important:** Payment links WITHOUT `irnytszm` custom field will be **automatically skipped** (e.g., SevenRooms integrations).
 
@@ -277,6 +281,7 @@ This allows:
 - **Tax subject:** `<adoalany>-1</adoalany>` (private person, non-tax-subject)
 - **Multi-line items:** Each product as separate `<tetel>` in XML
 - **Response version:** `<valaszVerzio>1</valaszVerzio>` (txt response)
+- **Advance invoice:** `<elolegszamla>true</elolegszamla>` (automatically set if product has `service_fee_percentage`)
 
 **Storno Invoice (xmlszamlast):**
 

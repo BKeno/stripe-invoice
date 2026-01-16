@@ -27,6 +27,11 @@ export const buildInvoiceXML = (
     })
     .join("\n");
 
+  // Check if this is an advance invoice (has service fee line items)
+  const isAdvanceInvoice = data.lineItems.some((item) =>
+    item.productName.startsWith("Szervizdíj")
+  );
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmlszamla xmlns="${
     XML_SETTINGS.namespace
@@ -49,6 +54,7 @@ export const buildInvoiceXML = (
     <penznem>${data.currency.toUpperCase()}</penznem>
     <szamlaNyelve>hu</szamlaNyelve>
     <fizetve>true</fizetve>
+    <elolegszamla>${isAdvanceInvoice}</elolegszamla>
   </fejlec>
   <elado>
     <bank>${config.bank}</bank>
