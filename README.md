@@ -38,6 +38,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 # Számlázz.hu
 SZAMLAZZ_API_KEY=...
+SZAMLAZZ_API_URL=https://www.szamlazz.hu/szamla/
 SZAMLAZZ_E_INVOICE=true
 SZAMLAZZ_ISSUER_NAME=Your Company
 SZAMLAZZ_BANK=UniCredit Bank Zrt.; BACX HU HB
@@ -66,8 +67,12 @@ NODE_ENV=production
 
 - `vat_rate`: `5`, `18`, or `27` **(required)**
 - `sheet_name`: Custom Sheet tab (optional, default: `Sheet1`)
+- `service_fee_percentage`: Service fee % (optional, e.g., `15`)
+  - If set, product price **includes** the fee
+  - Invoice: 2 line items (Product + Service Fee)
+  - Sheet: Full amount (not split)
 
-Example:
+Example without service fee:
 
 ```json
 {
@@ -75,6 +80,23 @@ Example:
   "sheet_name": "Event_Jan_2026"
 }
 ```
+
+Example with service fee (15%):
+
+```json
+{
+  "vat_rate": "27",
+  "sheet_name": "Event_Jan_2026",
+  "service_fee_percentage": "15"
+}
+```
+
+**How service fees work:**
+- Product price: 11,500 HUF with `service_fee_percentage: 15`
+- Invoice line items:
+  1. "Ticket" - 10,000 HUF (ÁFA: 27%)
+  2. "Szervizdíj 27% ÁFA" - 1,500 HUF (ÁFA: 27%)
+- Sheet entry: "Ticket" - 11,500 HUF (full amount)
 
 **Important:** Payment links WITHOUT `irnytszm` custom field will be **automatically skipped** (e.g., SevenRooms integrations).
 
@@ -188,7 +210,7 @@ src/
 ### Payment
 
 1. Customer pays via Stripe Paylink
-2. Webhook: `payment_intent.succeeded`
+2. Webhook: `payment_intent.succeeded` (note: This event doesnt contain all the data. it has to be retrieved from charge.succeeded)
 3. **Filter:** Check if `irnytszm` custom field exists → skip if not (SevenRooms, etc.)
 4. **Idempotency check:** Fetch fresh PaymentIntent, check if `invoice_number` exists → skip if duplicate
 5. Add rows to Sheets (one per product, status: "Függőben")
@@ -218,6 +240,34 @@ Prevents duplicate invoices during webhook retries:
 
 **Result:** Safe webhook retries, no duplicate invoices. Simplified from 4-layer (removed redundant `processing` flag).
 
+### Stripe Metadata Storage
+
+Invoice numbers are stored in Stripe PaymentIntent metadata for tracking and idempotency:
+
+**After successful invoice generation:**
+
+```json
+{
+  "invoice_number": "ABC-2025-123"
+}
+```
+
+**After successful refund:**
+
+```json
+{
+  "invoice_number": "ABC-2025-123",
+  "refund_invoice_number": "ABC-2025-124"
+}
+```
+
+This allows:
+
+- ✅ Idempotency protection (duplicate prevention)
+- ✅ Easy lookup of invoice numbers from Stripe Dashboard
+- ✅ Refund processing (requires original `invoice_number` to create storno)
+- ✅ Audit trail for invoice generation
+
 ### Számlázz.hu Invoice Features
 
 **Standard Invoice (xmlszamla):**
@@ -226,7 +276,7 @@ Prevents duplicate invoices during webhook retries:
 - **Auto email:** `<sendEmail>true</sendEmail>` (e-invoice sent by Számlázz.hu)
 - **Tax subject:** `<adoalany>-1</adoalany>` (private person, non-tax-subject)
 - **Multi-line items:** Each product as separate `<tetel>` in XML
-- **Response version:** `<valaszVerzio>1</valaszVerzio>` (ensures header-based response parsing)
+- **Response version:** `<valaszVerzio>1</valaszVerzio>` (txt response)
 
 **Storno Invoice (xmlszamlast):**
 

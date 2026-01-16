@@ -16,11 +16,11 @@ Minden Payment Link-hez **kötelezően** add hozzá a következő custom fields-
 
 1. Stripe Dashboard → **Payment Links** → Válassz ki egyet
 2. **Collect additional information** → **Add custom field**
-3. Írd be a fenti key-eket és beállításokat
+3. Írd be a fenti Mező-ket és beállításokat
 
 ---
 
-## 2. Product Metadata (ÁFA + Sheet lap)
+## 2. Product Metadata (ÁFA + Sheet lap + Szervizdíj)
 
 Minden Product-hoz add hozzá:
 
@@ -29,11 +29,28 @@ Minden Product-hoz add hozzá:
 - **`vat_rate`**: ÁFA kulcs (`5`, `18`, vagy `27`)
 - **`sheet_name`**: Google Sheets lap neve (ha nincs → `Sheet1`)
 
-**Minimális példa:**
+### Opcionális:
+
+- **`service_fee_percentage`**: Szervizdíj % (ha van, pl. `15`)
+  - Ha be van állítva, a termék ára **tartalmazza** a szervizdíjat
+  - Számlán 2 tételként jelenik meg (Termék + Szervizdíj)
+  - Példa: Product ára 11,500 HUF, `service_fee_percentage: 15`
+    - Számla: "Jegy" 10,000 HUF + "Szervizdíj 27% ÁFA" 1,500 HUF
+  - Sheet-en: teljes összeg (11,500 HUF, nem bontva szét)
+
+**Minimális példa (nincs szervizdíj):**
 
 ```
 vat_rate: 27
 sheet_name: Event_Jan_2026
+```
+
+**Példa szervizdíjjal:**
+
+```
+vat_rate: 27
+sheet_name: Event_Jan_2026
+service_fee_percentage: 15
 ```
 
 **Hogyan:**

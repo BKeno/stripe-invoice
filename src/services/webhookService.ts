@@ -1,9 +1,17 @@
-import type Stripe from 'stripe';
-import { stripe } from '../config/stripe.js';
-import { mapStripeAddress } from '../utils/addressMapper.js';
-import { generateInvoice, generateRefundInvoice } from './szamlazz/index.js';
-import { appendRowToSheet, updateInvoiceStatus, checkRowExists } from './sheetsService.js';
-import type { InvoiceData, InvoiceLineItem, StripeCustomField } from '../types/index.js';
+import type Stripe from "stripe";
+import { stripe } from "../config/stripe.js";
+import { mapStripeAddress } from "../utils/addressMapper.js";
+import { generateInvoice, generateRefundInvoice } from "./szamlazz/index.js";
+import {
+  appendRowToSheet,
+  updateInvoiceStatus,
+  checkRowExists,
+} from "./sheetsService.js";
+import type {
+  InvoiceData,
+  InvoiceLineItem,
+  StripeCustomField,
+} from "../types/index.js";
 
 const getVATRate = (productMetadata: Record<string, string>): number => {
   const vatRate = productMetadata.vat_rate;
@@ -13,7 +21,7 @@ const getVATRate = (productMetadata: Record<string, string>): number => {
   }
 
   // Default fallback - should be configured per product
-  console.warn('No VAT rate configured in product metadata, using default 27%');
+  console.warn("No VAT rate configured in product metadata, using default 27%");
   return 27;
 };
 
@@ -24,55 +32,70 @@ export const handlePaymentSuccess = async (
 
   // SECURITY LAYER 1: Fetch FRESH payment intent to check current metadata
   // (webhook payload may contain stale data from when the event was created)
-  const freshPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
+  const freshPaymentIntent = await stripe.paymentIntents.retrieve(
+    paymentIntent.id
+  );
 
   if (freshPaymentIntent.metadata.invoice_number) {
-    console.log(`[IDEMPOTENCY] Invoice already exists: ${freshPaymentIntent.metadata.invoice_number}`);
+    console.log(
+      `[IDEMPOTENCY] Invoice already exists: ${freshPaymentIntent.metadata.invoice_number}`
+    );
     return;
   }
 
   // Fetch full payment link session to get product details
   const session = await stripe.checkout.sessions.list({
     payment_intent: paymentIntent.id,
-    limit: 1
+    limit: 1,
   });
 
   if (session.data.length === 0) {
-    throw new Error('No checkout session found for payment intent');
+    throw new Error("No checkout session found for payment intent");
   }
 
   const checkoutSession = session.data[0];
 
   // Get line items to extract product info
-  const lineItems = await stripe.checkout.sessions.listLineItems(checkoutSession.id);
+  const lineItems = await stripe.checkout.sessions.listLineItems(
+    checkoutSession.id
+  );
 
   if (lineItems.data.length === 0) {
-    throw new Error('No line items found in checkout session');
+    throw new Error("No line items found in checkout session");
   }
 
   // Map billing address
-  const customFields = checkoutSession.custom_fields as StripeCustomField[] ?? [];
-  const customerName = checkoutSession.customer_details?.name ?? '';
-  const customerEmail = checkoutSession.customer_details?.email ?? '';
+  const customFields =
+    (checkoutSession.custom_fields as StripeCustomField[]) ?? [];
+  const customerName = checkoutSession.customer_details?.name ?? "";
+  const customerEmail = checkoutSession.customer_details?.email ?? "";
 
   // SKIP payments without irányítószám (irnytszm) - not from invoice-enabled payment links
-  const hasIrnytszmField = customFields.some(field => field.key === 'irnytszm');
+  const hasIrnytszmField = customFields.some(
+    (field) => field.key === "irnytszm"
+  );
   if (!hasIrnytszmField) {
-    console.log(`[SKIP] No 'irnytszm' custom field - payment not from invoice-enabled payment link (likely SevenRooms or other integration)`);
+    console.log(
+      `[SKIP] custom field check failed - payment not from invoice-enabled payment link (likely SevenRooms or other integration)`
+    );
     return;
   }
 
-  const billingAddress = mapStripeAddress(customFields, customerName, customerEmail);
+  const billingAddress = mapStripeAddress(
+    customFields,
+    customerName,
+    customerEmail
+  );
 
   // Process all line items
   const invoiceLineItems: InvoiceLineItem[] = [];
-  let firstSheetName = 'Sheet1';
+  const sheetLineItems: Array<{ productName: string; quantity: number; amount: number; vatRate: number }> = [];
+  let firstSheetName = "Sheet1";
 
   for (const lineItem of lineItems.data) {
     const productId = lineItem.price?.product as string;
     const quantity = lineItem.quantity ?? 1;
-    const unitPrice = (lineItem.amount_total ?? 0) / 100 / quantity;
-    const amount = (lineItem.amount_total ?? 0) / 100;
+    const totalAmount = (lineItem.amount_total ?? 0) / 100;
 
     // Fetch product to get name and metadata
     const product = await stripe.products.retrieve(productId);
@@ -82,17 +105,65 @@ export const handlePaymentSuccess = async (
 
     // Store first product's sheet name for the overall payment
     if (invoiceLineItems.length === 0) {
-      firstSheetName = product.metadata.sheet_name || 'Sheet1';
+      firstSheetName = product.metadata.sheet_name || "Sheet1";
     }
 
-    invoiceLineItems.push({
-      productName: product.name,
-      productId,
-      quantity,
-      unitPrice,
-      amount,
-      vatRate
-    });
+    // Check for service fee
+    const serviceFeePercentage = product.metadata.service_fee_percentage;
+
+    if (serviceFeePercentage) {
+      // Product price includes service fee - split into base product + fee for INVOICE
+      const feeRate = parseFloat(serviceFeePercentage) / 100;
+      const feeMultiplier = 1 + feeRate;
+
+      const baseAmount = totalAmount / feeMultiplier;
+      const feeAmount = totalAmount - baseAmount;
+
+      // 1. Base product (without service fee) - for invoice
+      invoiceLineItems.push({
+        productName: product.name,
+        productId,
+        quantity,
+        unitPrice: baseAmount / quantity,
+        amount: baseAmount,
+        vatRate,
+      });
+
+      // 2. Service fee line item (same VAT rate as product) - for invoice
+      invoiceLineItems.push({
+        productName: `Szervizdíj ${vatRate}% ÁFA`,
+        productId: `${productId}_service_fee`,
+        quantity: 1,
+        unitPrice: feeAmount,
+        amount: feeAmount,
+        vatRate,
+      });
+
+      // For SHEET: full amount (base + fee combined)
+      sheetLineItems.push({
+        productName: product.name,
+        quantity,
+        amount: totalAmount, // Full amount including service fee
+        vatRate,
+      });
+    } else {
+      // No service fee - normal line item for both invoice and sheet
+      invoiceLineItems.push({
+        productName: product.name,
+        productId,
+        quantity,
+        unitPrice: totalAmount / quantity,
+        amount: totalAmount,
+        vatRate,
+      });
+
+      sheetLineItems.push({
+        productName: product.name,
+        quantity,
+        amount: totalAmount,
+        vatRate,
+      });
+    }
   }
 
   // Prepare invoice data
@@ -103,38 +174,46 @@ export const handlePaymentSuccess = async (
     currency: paymentIntent.currency,
     lineItems: invoiceLineItems,
     billingAddress,
-    stripePaymentId: paymentIntent.id
+    stripePaymentId: paymentIntent.id,
   };
 
   // Add rows to Google Sheets first with pending status
-  const sheetsEnabled = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SERVICE_ACCOUNT_JSON !== '{"type":"service_account","project_id":"..."}';
+  const sheetsEnabled =
+    !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON &&
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON !==
+      '{"type":"service_account","project_id":"..."}';
 
   if (sheetsEnabled) {
     // SECURITY LAYER 2: Check if row already exists in Sheet
     const rowExists = await checkRowExists(paymentIntent.id, firstSheetName);
     if (rowExists) {
-      console.log(`[IDEMPOTENCY] Row already exists in sheet for payment: ${paymentIntent.id}`);
+      console.log(
+        `[IDEMPOTENCY] Row already exists in sheet for payment: ${paymentIntent.id}`
+      );
       return;
     }
 
-    // Create a row for each line item
-    for (const item of invoiceLineItems) {
-      await appendRowToSheet({
-        date: new Date().toISOString().split('T')[0],
-        customerName,
-        email: customerEmail,
-        amount: item.amount.toString(),
-        productName: item.productName,
-        quantity: item.quantity,
-        vatRate: `${item.vatRate}%`,
-        address: `${billingAddress.postalCode} ${billingAddress.city}, ${billingAddress.address}`,
-        invoiceNumber: '',
-        invoiceStatus: 'Függőben',
-        stripePaymentId: paymentIntent.id
-      }, firstSheetName);
+    // Create a row for each sheet line item (full amounts, no service fee split)
+    for (const item of sheetLineItems) {
+      await appendRowToSheet(
+        {
+          date: new Date().toISOString().split("T")[0],
+          customerName,
+          email: customerEmail,
+          amount: item.amount.toString(),
+          productName: item.productName,
+          quantity: item.quantity,
+          vatRate: `${item.vatRate}%`,
+          address: `${billingAddress.postalCode} ${billingAddress.city}, ${billingAddress.address}`,
+          invoiceNumber: "",
+          invoiceStatus: "Függőben",
+          stripePaymentId: paymentIntent.id,
+        },
+        firstSheetName
+      );
     }
   } else {
-    console.log('[SKIP] Google Sheets not configured, skipping sheet sync');
+    console.log("[SKIP] Google Sheets not configured, skipping sheet sync");
   }
 
   // Generate invoice
@@ -143,21 +222,28 @@ export const handlePaymentSuccess = async (
 
     // Update all sheet rows with invoice number and status
     if (sheetsEnabled) {
-      await updateInvoiceStatus(paymentIntent.id, invoiceNumber, 'Kiállítva', firstSheetName);
+      await updateInvoiceStatus(
+        paymentIntent.id,
+        invoiceNumber,
+        "Kiállítva",
+        firstSheetName
+      );
     }
 
     // SECURITY LAYER 3: Store invoice number in Stripe metadata for idempotency
     await stripe.paymentIntents.update(paymentIntent.id, {
       metadata: {
-        invoice_number: invoiceNumber
-      }
+        invoice_number: invoiceNumber,
+      },
     });
 
-    console.log(`Invoice generated: ${invoiceNumber} for payment ${paymentIntent.id}`);
+    console.log(
+      `Invoice generated: ${invoiceNumber} for payment ${paymentIntent.id}`
+    );
   } catch (err) {
-    console.error('Failed to generate invoice:', err);
+    console.error("Failed to generate invoice:", err);
     if (sheetsEnabled) {
-      await updateInvoiceStatus(paymentIntent.id, '', 'Hiba', firstSheetName);
+      await updateInvoiceStatus(paymentIntent.id, "", "Hiba", firstSheetName);
     }
     throw err;
   }
@@ -172,38 +258,49 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
   // SKIP refunds for payments that never had an invoice (non-invoice-enabled payment links)
   const originalInvoiceNumber = paymentIntent.metadata.invoice_number;
   if (!originalInvoiceNumber) {
-    console.log(`[SKIP] No original invoice found - payment was not from invoice-enabled payment link`);
+    console.log(
+      `[SKIP] No original invoice found - payment was not from invoice-enabled payment link`
+    );
     return;
   }
 
   // IDEMPOTENCY: Check if refund already processed
   if (paymentIntent.metadata.refund_invoice_number) {
-    console.log(`[IDEMPOTENCY] Refund invoice already exists: ${paymentIntent.metadata.refund_invoice_number}`);
+    console.log(
+      `[IDEMPOTENCY] Refund invoice already exists: ${paymentIntent.metadata.refund_invoice_number}`
+    );
     return;
   }
 
   // Fetch original payment data
   const session = await stripe.checkout.sessions.list({
     payment_intent: paymentIntentId,
-    limit: 1
+    limit: 1,
   });
 
   if (session.data.length === 0) {
-    throw new Error('No checkout session found for refund');
+    throw new Error("No checkout session found for refund");
   }
 
   const checkoutSession = session.data[0];
-  const lineItems = await stripe.checkout.sessions.listLineItems(checkoutSession.id);
+  const lineItems = await stripe.checkout.sessions.listLineItems(
+    checkoutSession.id
+  );
 
-  const customFields = checkoutSession.custom_fields as StripeCustomField[] ?? [];
-  const customerName = checkoutSession.customer_details?.name ?? '';
-  const customerEmail = checkoutSession.customer_details?.email ?? '';
+  const customFields =
+    (checkoutSession.custom_fields as StripeCustomField[]) ?? [];
+  const customerName = checkoutSession.customer_details?.name ?? "";
+  const customerEmail = checkoutSession.customer_details?.email ?? "";
 
-  const billingAddress = mapStripeAddress(customFields, customerName, customerEmail);
+  const billingAddress = mapStripeAddress(
+    customFields,
+    customerName,
+    customerEmail
+  );
 
   // Process all line items
   const invoiceLineItems: InvoiceLineItem[] = [];
-  let firstSheetName = 'Sheet1';
+  let firstSheetName = "Sheet1";
 
   for (const lineItem of lineItems.data) {
     const productId = lineItem.price?.product as string;
@@ -215,7 +312,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
     const vatRate = getVATRate(product.metadata);
 
     if (invoiceLineItems.length === 0) {
-      firstSheetName = product.metadata.sheet_name || 'Sheet1';
+      firstSheetName = product.metadata.sheet_name || "Sheet1";
     }
 
     invoiceLineItems.push({
@@ -224,7 +321,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
       quantity,
       unitPrice,
       amount,
-      vatRate
+      vatRate,
     });
   }
 
@@ -235,30 +332,43 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
     currency: refund.currency,
     lineItems: invoiceLineItems,
     billingAddress,
-    stripePaymentId: paymentIntentId
+    stripePaymentId: paymentIntentId,
   };
 
   // Generate refund invoice (storno)
   try {
-    const refundInvoiceNumber = await generateRefundInvoice(originalInvoiceNumber, invoiceData);
+    const refundInvoiceNumber = await generateRefundInvoice(
+      originalInvoiceNumber,
+      invoiceData
+    );
 
     // Update sheet status to canceled
-    const sheetsEnabled = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_SERVICE_ACCOUNT_JSON !== '{"type":"service_account","project_id":"..."}';
+    const sheetsEnabled =
+      !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON &&
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON !==
+        '{"type":"service_account","project_id":"..."}';
 
     if (sheetsEnabled) {
-      await updateInvoiceStatus(paymentIntentId, refundInvoiceNumber, 'Sztornózva', firstSheetName);
+      await updateInvoiceStatus(
+        paymentIntentId,
+        refundInvoiceNumber,
+        "Sztornózva",
+        firstSheetName
+      );
     }
 
     // Store refund invoice number in metadata for idempotency
     await stripe.paymentIntents.update(paymentIntentId, {
       metadata: {
-        refund_invoice_number: refundInvoiceNumber
-      }
+        refund_invoice_number: refundInvoiceNumber,
+      },
     });
 
-    console.log(`Refund invoice generated: ${refundInvoiceNumber} for payment ${paymentIntentId}`);
+    console.log(
+      `Refund invoice generated: ${refundInvoiceNumber} for payment ${paymentIntentId}`
+    );
   } catch (err) {
-    console.error('Failed to generate refund invoice:', err);
+    console.error("Failed to generate refund invoice:", err);
     throw err;
   }
 };
