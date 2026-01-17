@@ -50,7 +50,8 @@ export const handlePaymentSuccess = async (
   });
 
   if (session.data.length === 0) {
-    throw new Error("No checkout session found for payment intent");
+    console.log('[SKIP] No checkout session found - likely SevenRooms or other integration');
+    return;
   }
 
   const checkoutSession = session.data[0];

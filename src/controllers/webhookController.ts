@@ -10,31 +10,26 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
   console.log(`Received webhook event: ${event.type}`);
 
-  try {
-    switch (event.type) {
-      case 'payment_intent.succeeded':
-        if (MOCK_MODE) {
-          await handleMockPaymentSuccess(event.data.object as Stripe.PaymentIntent);
-        } else {
-          await handlePaymentSuccess(event.data.object as Stripe.PaymentIntent);
-        }
-        break;
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      if (MOCK_MODE) {
+        await handleMockPaymentSuccess(event.data.object as Stripe.PaymentIntent);
+      } else {
+        await handlePaymentSuccess(event.data.object as Stripe.PaymentIntent);
+      }
+      break;
 
-      case 'charge.refunded':
-        const charge = event.data.object as Stripe.Charge;
-        if (charge.refunds?.data[0]) {
-          await handleRefund(charge.refunds.data[0]);
-        }
-        break;
+    case 'charge.refunded':
+      const charge = event.data.object as Stripe.Charge;
+      if (charge.refunds?.data[0]) {
+        await handleRefund(charge.refunds.data[0]);
+      }
+      break;
 
-      default:
-        console.log(`Unhandled event type: ${event.type}`);
-    }
-
-    res.json({ received: true });
-  } catch (err) {
-    const error = err as Error;
-    console.error(`Webhook handler error: ${error.message}`);
-    throw error;
+    default:
+      console.log(`Unhandled event type: ${event.type}`);
   }
+
+  res.json({ received: true });
+  // Express 5 automatically catches async errors
 };
