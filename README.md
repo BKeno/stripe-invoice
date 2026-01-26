@@ -293,38 +293,59 @@ This allows:
 
 ## Manual Payment Processing
 
-For processing old payments that occurred **before the webhook was configured**, use the local script:
+For processing old payments that occurred **before the webhook was configured**, use the local script with environment-specific configurations.
 
-**Usage:**
+### Setup
+
+1. **Create environment files:**
 
 ```bash
-# Single payment
-npm run process-payment pi_1234567890
+# .env.staging - for testing with staging keys
+.env.staging
 
-# Multiple payments
-npm run process-payment pi_xxx pi_yyy pi_zzz
+# .env.production - for live invoice generation
+.env.production
 ```
 
-**Output:**
+2. **Copy Railway environment variables** to the respective files.
+
+### Usage
+
+```bash
+# STAGING (test keys)
+npm run process-payment:staging pi_1234567890
+
+# PRODUCTION (live keys)
+npm run process-payment:prod pi_1234567890
+
+# Multiple payments
+npm run process-payment:prod pi_xxx pi_yyy pi_zzz
+```
+
+### Output
 
 ```
 Processing 1 payment(s)...
 
 [pi_1234567890] Starting...
 Processing payment: pi_1234567890
-Invoice generated: ABC-2025-123 for payment pi_1234567890
+[Sheet] 1 row(s) created with status: Függőben
+[Számlázz.hu] Invoice created: E-PR-2026-24
+[Sheet] Updated status: Kiállítva
+✓ Complete: E-PR-2026-24 | pi_1234567890
 [pi_1234567890] ✅ Success
 
 Done!
 ```
 
-**Notes:**
+### Notes
 
 - ✅ Safe to retry - 3-layer idempotency protection prevents duplicate invoices
 - ✅ Only processes payments from invoice-enabled payment links (with `irnytszm` field)
 - ✅ Skips payments already processed (checks metadata + Sheet)
-- ✅ Runs locally from your machine using your `.env` configuration
-- ⚠️ Uses the Stripe API keys from your `.env` file (use staging keys for testing)
+- ✅ Environment-specific configs - no manual .env switching
+- ⚠️ `.env.staging` and `.env.production` are in `.gitignore` - never commit these files
+- ⚠️ Always test on staging first before running on production
 
 ## Troubleshooting
 

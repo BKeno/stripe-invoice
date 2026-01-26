@@ -8,7 +8,9 @@
     "start": "node dist/index.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "process-payment": "tsx scripts/process-old-payment.ts"
+    "process-payment": "tsx scripts/process-old-payment.ts",
+    "process-payment:staging": "tsx -r dotenv/config scripts/process-old-payment.ts dotenv_config_path=.env.staging",
+    "process-payment:prod": "tsx -r dotenv/config scripts/process-old-payment.ts dotenv_config_path=.env.production"
   },
   "keywords": [
     "stripe",
