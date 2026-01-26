@@ -49,7 +49,7 @@ GOOGLE_SHEETS_ID=1abc...xyz
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 
 # Server
-PORT=3000
+PORT=8080
 NODE_ENV=production
 ```
 
@@ -142,7 +142,7 @@ git push origin main
 npm run dev
 
 # Test webhooks with Stripe CLI:
-stripe listen --forward-to localhost:3000/webhook/stripe
+stripe listen --forward-to localhost:8080/webhook/stripe
 ```
 
 ## Deployment Environments
@@ -291,50 +291,40 @@ This allows:
 - **Form field:** `action-szamla_agent_st` (not `action-xmlagentxmlfile`)
 - **Type:** `<tipus>SS</tipus>` (storno számla)
 
-## Admin Endpoints
+## Manual Payment Processing
 
-### Manual Payment Processing
+For processing old payments that occurred **before the webhook was configured**, use the local script:
 
-For processing old payments that occurred **before the webhook was configured**, use the admin endpoint:
-
-**Endpoint:** `POST /admin/process-payment/:paymentIntentId`
-
-**Security:** Dual-layer protection:
-1. **Localhost-only** - endpoint only accepts requests from `127.0.0.1`
-2. **API key authentication** - requires `Authorization: Bearer <ADMIN_API_KEY>`
-
-**Setup:**
+**Usage:**
 
 ```bash
-# 1. Generate secure API key
-openssl rand -base64 32
+# Single payment
+npm run process-payment pi_1234567890
 
-# 2. Add to .env
-ADMIN_API_KEY=your-generated-key-here
+# Multiple payments
+npm run process-payment pi_xxx pi_yyy pi_zzz
 ```
 
-**Usage on Railway:**
+**Output:**
 
-```bash
-# 1. SSH into Railway container
-railway shell
+```
+Processing 1 payment(s)...
 
-# 2. Process a payment
-curl -H "Authorization: Bearer ${ADMIN_API_KEY}" \
-     -X POST http://localhost:3000/admin/process-payment/pi_1234567890
+[pi_1234567890] Starting...
+Processing payment: pi_1234567890
+Invoice generated: ABC-2025-123 for payment pi_1234567890
+[pi_1234567890] ✅ Success
 
-# Response (success):
-# {"success":true,"message":"Payment pi_1234567890 processed successfully"}
-
-# Response (already processed - idempotency):
-# Returns 200 OK with no duplicate invoice (3-layer protection prevents duplicates)
+Done!
 ```
 
 **Notes:**
-- Safe to retry - idempotency protection prevents duplicate invoices
-- Only processes payments from invoice-enabled payment links (with `irnytszm` field)
-- Skips payments already processed (checks metadata + Sheet)
-- Future extension: Can add endpoints for retry failed invoices, manual refunds, etc.
+
+- ✅ Safe to retry - 3-layer idempotency protection prevents duplicate invoices
+- ✅ Only processes payments from invoice-enabled payment links (with `irnytszm` field)
+- ✅ Skips payments already processed (checks metadata + Sheet)
+- ✅ Runs locally from your machine using your `.env` configuration
+- ⚠️ Uses the Stripe API keys from your `.env` file (use staging keys for testing)
 
 ## Troubleshooting
 

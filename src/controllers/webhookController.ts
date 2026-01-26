@@ -8,8 +8,6 @@ const MOCK_MODE = process.env.MOCK_WEBHOOK_HANDLER === 'true';
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const event = req.stripeEvent as Stripe.Event;
 
-  console.log(`Received webhook event: ${event.type}`);
-
   switch (event.type) {
     case 'payment_intent.succeeded':
       if (MOCK_MODE) {

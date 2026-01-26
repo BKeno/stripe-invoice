@@ -213,8 +213,9 @@ export const handlePaymentSuccess = async (
         firstSheetName
       );
     }
+    console.log(`[Sheet] ${sheetLineItems.length} row(s) created with status: Függőben`);
   } else {
-    console.log("[SKIP] Google Sheets not configured, skipping sheet sync");
+    console.log("[SKIP] Google Sheets not configured");
   }
 
   // Generate invoice
@@ -229,6 +230,7 @@ export const handlePaymentSuccess = async (
         "Kiállítva",
         firstSheetName
       );
+      console.log(`[Sheet] Updated status: Kiállítva`);
     }
 
     // SECURITY LAYER 3: Store invoice number in Stripe metadata for idempotency
@@ -238,9 +240,7 @@ export const handlePaymentSuccess = async (
       },
     });
 
-    console.log(
-      `Invoice generated: ${invoiceNumber} for payment ${paymentIntentId}`
-    );
+    console.log(`✓ Complete: ${invoiceNumber} | ${paymentIntentId}`);
   } catch (err) {
     console.error("Failed to generate invoice:", err);
     if (sheetsEnabled) {
@@ -356,6 +356,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
         "Sztornózva",
         firstSheetName
       );
+      console.log(`[Sheet] Updated status: Sztornózva`);
     }
 
     // Store refund invoice number in metadata for idempotency
@@ -365,9 +366,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
       },
     });
 
-    console.log(
-      `Refund invoice generated: ${refundInvoiceNumber} for payment ${paymentIntentId}`
-    );
+    console.log(`✓ Storno complete: ${refundInvoiceNumber} (cancelled ${originalInvoiceNumber}) | ${paymentIntentId}`);
   } catch (err) {
     console.error("Failed to generate refund invoice:", err);
     throw err;

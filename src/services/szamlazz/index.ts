@@ -64,7 +64,6 @@ export const generateInvoice = async (data: InvoiceData): Promise<string> => {
 
     const invoiceNumber = await callSzamlazzAPI(xmlData, config.apiUrl);
 
-    console.log(`Invoice generated: ${invoiceNumber}`);
     return invoiceNumber;
   } catch (err) {
     const error = err as Error;
@@ -89,9 +88,6 @@ export const generateRefundInvoice = async (
       'action-szamla_agent_st'
     );
 
-    console.log(
-      `Refund invoice generated: ${invoiceNumber} (cancelling ${originalInvoiceNumber})`
-    );
     return invoiceNumber;
   } catch (err) {
     const error = err as Error;
