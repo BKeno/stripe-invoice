@@ -1,11 +1,33 @@
 #!/usr/bin/env tsx
 /**
- * Export payments with invoice status for audit
+ * Export Stripe payments with invoice status for audit
  *
- * Usage (with Railway CLI):
- *   railway link (select staging or production project)
- *   railway run npm run audit-payments 2026-01-01
- *   railway run npm run audit-payments 2026-01-01 2026-01-31  (date range)
+ * PURPOSE:
+ *   Identify payments that may be missing invoices (e.g., webhook failures,
+ *   payments before integration was set up). Exports data to CSV for review.
+ *
+ * USAGE:
+ *   railway link                  # Select staging or production project
+ *   railway run npm run audit-payments <start-date> [end-date]
+ *
+ * EXAMPLES:
+ *   railway run npm run audit-payments 2026-01-01              # From date to now
+ *   railway run npm run audit-payments 2026-01-01 2026-01-31   # Date range
+ *
+ * OUTPUT:
+ *   1. CSV file: payments-audit-<start>-<end>.csv
+ *      Columns: Payment ID, Amount, Currency, Date, Customer Name,
+ *               Customer Email, Has Invoice (YES/NO), Invoice Number
+ *
+ *   2. Console summary:
+ *      - Total invoice-enabled payments found
+ *      - Count with/without invoices
+ *      - List of payment IDs missing invoices (for manual processing)
+ *
+ * NOTES:
+ *   - Only includes payments with checkout sessions (skips SevenRooms, etc.)
+ *   - Limited to 100 payments per run (Stripe API default)
+ *   - Use payment IDs from output with: railway run npm run process-payment <id>
  */
 
 import { writeFileSync } from 'fs';
@@ -91,9 +113,9 @@ const startDate = process.argv[2];
 const endDate = process.argv[3];
 
 if (!startDate) {
-  console.error('Usage: npm run audit-payments:staging <start-date> [end-date]');
-  console.error('Example: npm run audit-payments:staging 2026-01-01');
-  console.error('Example: npm run audit-payments:staging 2026-01-01 2026-01-31');
+  console.error('Usage: railway run npm run audit-payments <start-date> [end-date]');
+  console.error('Example: railway run npm run audit-payments 2026-01-01');
+  console.error('Example: railway run npm run audit-payments 2026-01-01 2026-01-31');
   process.exit(1);
 }
 
