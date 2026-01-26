@@ -6,6 +6,7 @@ import {
   appendRowToSheet,
   updateInvoiceStatus,
   checkRowExists,
+  checkHasInvoice,
 } from "./sheetsService.js";
 import type {
   InvoiceData,
@@ -187,33 +188,42 @@ export const handlePaymentSuccess = async (
   if (sheetsEnabled) {
     // SECURITY LAYER 2: Check if row already exists in Sheet
     const rowExists = await checkRowExists(paymentIntentId, firstSheetName);
-    if (rowExists) {
-      console.log(
-        `[IDEMPOTENCY] Row already exists in sheet for payment: ${paymentIntentId}`
-      );
-      return;
-    }
 
-    // Create a row for each sheet line item (full amounts, no service fee split)
-    for (const item of sheetLineItems) {
-      await appendRowToSheet(
-        {
-          date: new Date().toISOString().split("T")[0],
-          customerName,
-          email: customerEmail,
-          amount: item.amount.toString(),
-          productName: item.productName,
-          quantity: item.quantity,
-          vatRate: `${item.vatRate}%`,
-          address: `${billingAddress.postalCode} ${billingAddress.city}, ${billingAddress.address}`,
-          invoiceNumber: "",
-          invoiceStatus: "Függőben",
-          stripePaymentId: paymentIntentId,
-        },
-        firstSheetName
-      );
+    if (rowExists) {
+      // Row exists - check if it has invoice number
+      const hasInvoice = await checkHasInvoice(paymentIntentId, firstSheetName);
+
+      if (hasInvoice) {
+        console.log(
+          `[IDEMPOTENCY] Row already exists with invoice number for payment: ${paymentIntentId}`
+        );
+        return;
+      }
+
+      // Row exists but no invoice (error recovery scenario) - skip row creation, continue to invoice generation
+      console.log(`[RETRY] Row exists without invoice, retrying invoice generation: ${paymentIntentId}`);
+    } else {
+      // No row exists - create rows
+      for (const item of sheetLineItems) {
+        await appendRowToSheet(
+          {
+            date: new Date().toISOString().split("T")[0],
+            customerName,
+            email: customerEmail,
+            amount: item.amount.toString(),
+            productName: item.productName,
+            quantity: item.quantity,
+            vatRate: `${item.vatRate}%`,
+            address: `${billingAddress.postalCode} ${billingAddress.city}, ${billingAddress.address}`,
+            invoiceNumber: "",
+            invoiceStatus: "Függőben",
+            stripePaymentId: paymentIntentId,
+          },
+          firstSheetName
+        );
+      }
+      console.log(`[Sheet] ${sheetLineItems.length} row(s) created with status: Függőben`);
     }
-    console.log(`[Sheet] ${sheetLineItems.length} row(s) created with status: Függőben`);
   } else {
     console.log("[SKIP] Google Sheets not configured");
   }
