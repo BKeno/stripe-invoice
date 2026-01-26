@@ -9,8 +9,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "process-payment": "tsx scripts/process-old-payment.ts",
-    "process-payment:staging": "tsx -r dotenv/config scripts/process-old-payment.ts dotenv_config_path=.env.staging",
-    "process-payment:prod": "tsx -r dotenv/config scripts/process-old-payment.ts dotenv_config_path=.env.production"
+    "process-payment:staging": "DOTENV_CONFIG_PATH=.env.staging tsx scripts/process-old-payment.ts",
+    "process-payment:prod": "DOTENV_CONFIG_PATH=.env.production tsx scripts/process-old-payment.ts"
   },
   "keywords": [
     "stripe",

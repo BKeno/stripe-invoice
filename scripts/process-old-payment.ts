@@ -3,14 +3,16 @@
  * Process old payments that occurred before webhook was configured
  *
  * Usage:
- *   npm run process-payment pi_1234567890
- *   npm run process-payment pi_xxx pi_yyy pi_zzz  (multiple payments)
+ *   npm run process-payment:staging pi_1234567890
+ *   npm run process-payment:prod pi_1234567890
+ *   npm run process-payment:staging pi_xxx pi_yyy pi_zzz  (multiple payments)
  */
 
 import dotenv from 'dotenv';
 import { handlePaymentSuccess } from '../src/services/webhookService.js';
 
-dotenv.config();
+// Load environment variables from custom path if specified
+dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
 
 const processPayments = async (paymentIntentIds: string[]) => {
   console.log(`Processing ${paymentIntentIds.length} payment(s)...\n`);
