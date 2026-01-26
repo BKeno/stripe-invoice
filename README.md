@@ -1,4 +1,4 @@
-# Stripe Invoice Automation
+# Déryné Stripe Invoice — Integration service
 
 Automated invoice generation for Stripe Paylink payments → Számlázz.hu → Google Sheets sync.
 
@@ -94,6 +94,7 @@ Example with service fee (15%):
 ```
 
 **How service fees work:**
+
 - Product price: 11,500 HUF with `service_fee_percentage: 15`
 - Invoice type: **Advance invoice** (előlegszámla)
 - Invoice line items:
@@ -289,6 +290,51 @@ This allows:
 - **No line items needed:** Számlázz.hu automatically copies from original invoice
 - **Form field:** `action-szamla_agent_st` (not `action-xmlagentxmlfile`)
 - **Type:** `<tipus>SS</tipus>` (storno számla)
+
+## Admin Endpoints
+
+### Manual Payment Processing
+
+For processing old payments that occurred **before the webhook was configured**, use the admin endpoint:
+
+**Endpoint:** `POST /admin/process-payment/:paymentIntentId`
+
+**Security:** Dual-layer protection:
+1. **Localhost-only** - endpoint only accepts requests from `127.0.0.1`
+2. **API key authentication** - requires `Authorization: Bearer <ADMIN_API_KEY>`
+
+**Setup:**
+
+```bash
+# 1. Generate secure API key
+openssl rand -base64 32
+
+# 2. Add to .env
+ADMIN_API_KEY=your-generated-key-here
+```
+
+**Usage on Railway:**
+
+```bash
+# 1. SSH into Railway container
+railway shell
+
+# 2. Process a payment
+curl -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+     -X POST http://localhost:3000/admin/process-payment/pi_1234567890
+
+# Response (success):
+# {"success":true,"message":"Payment pi_1234567890 processed successfully"}
+
+# Response (already processed - idempotency):
+# Returns 200 OK with no duplicate invoice (3-layer protection prevents duplicates)
+```
+
+**Notes:**
+- Safe to retry - idempotency protection prevents duplicate invoices
+- Only processes payments from invoice-enabled payment links (with `irnytszm` field)
+- Skips payments already processed (checks metadata + Sheet)
+- Future extension: Can add endpoints for retry failed invoices, manual refunds, etc.
 
 ## Troubleshooting
 

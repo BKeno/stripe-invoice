@@ -26,14 +26,14 @@ const getVATRate = (productMetadata: Record<string, string>): number => {
 };
 
 export const handlePaymentSuccess = async (
-  paymentIntent: Stripe.PaymentIntent
+  paymentIntentId: string
 ): Promise<void> => {
-  console.log(`Processing payment: ${paymentIntent.id}`);
+  console.log(`Processing payment: ${paymentIntentId}`);
 
   // SECURITY LAYER 1: Fetch FRESH payment intent to check current metadata
   // (webhook payload may contain stale data from when the event was created)
   const freshPaymentIntent = await stripe.paymentIntents.retrieve(
-    paymentIntent.id
+    paymentIntentId
   );
 
   if (freshPaymentIntent.metadata.invoice_number) {
@@ -45,7 +45,7 @@ export const handlePaymentSuccess = async (
 
   // Fetch full payment link session to get product details
   const session = await stripe.checkout.sessions.list({
-    payment_intent: paymentIntent.id,
+    payment_intent: paymentIntentId,
     limit: 1,
   });
 
@@ -171,11 +171,11 @@ export const handlePaymentSuccess = async (
   const invoiceData: InvoiceData = {
     customerName,
     customerEmail,
-    totalAmount: paymentIntent.amount / 100,
-    currency: paymentIntent.currency,
+    totalAmount: freshPaymentIntent.amount / 100,
+    currency: freshPaymentIntent.currency,
     lineItems: invoiceLineItems,
     billingAddress,
-    stripePaymentId: paymentIntent.id,
+    stripePaymentId: paymentIntentId,
   };
 
   // Add rows to Google Sheets first with pending status
@@ -186,10 +186,10 @@ export const handlePaymentSuccess = async (
 
   if (sheetsEnabled) {
     // SECURITY LAYER 2: Check if row already exists in Sheet
-    const rowExists = await checkRowExists(paymentIntent.id, firstSheetName);
+    const rowExists = await checkRowExists(paymentIntentId, firstSheetName);
     if (rowExists) {
       console.log(
-        `[IDEMPOTENCY] Row already exists in sheet for payment: ${paymentIntent.id}`
+        `[IDEMPOTENCY] Row already exists in sheet for payment: ${paymentIntentId}`
       );
       return;
     }
@@ -208,7 +208,7 @@ export const handlePaymentSuccess = async (
           address: `${billingAddress.postalCode} ${billingAddress.city}, ${billingAddress.address}`,
           invoiceNumber: "",
           invoiceStatus: "Függőben",
-          stripePaymentId: paymentIntent.id,
+          stripePaymentId: paymentIntentId,
         },
         firstSheetName
       );
@@ -224,7 +224,7 @@ export const handlePaymentSuccess = async (
     // Update all sheet rows with invoice number and status
     if (sheetsEnabled) {
       await updateInvoiceStatus(
-        paymentIntent.id,
+        paymentIntentId,
         invoiceNumber,
         "Kiállítva",
         firstSheetName
@@ -232,19 +232,19 @@ export const handlePaymentSuccess = async (
     }
 
     // SECURITY LAYER 3: Store invoice number in Stripe metadata for idempotency
-    await stripe.paymentIntents.update(paymentIntent.id, {
+    await stripe.paymentIntents.update(paymentIntentId, {
       metadata: {
         invoice_number: invoiceNumber,
       },
     });
 
     console.log(
-      `Invoice generated: ${invoiceNumber} for payment ${paymentIntent.id}`
+      `Invoice generated: ${invoiceNumber} for payment ${paymentIntentId}`
     );
   } catch (err) {
     console.error("Failed to generate invoice:", err);
     if (sheetsEnabled) {
-      await updateInvoiceStatus(paymentIntent.id, "", "Hiba", firstSheetName);
+      await updateInvoiceStatus(paymentIntentId, "", "Hiba", firstSheetName);
     }
     throw err;
   }

@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { verifyStripeSignature } from './middlewares/stripeSignature.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
+import adminRoutes from './routes/admin.js';
 
 dotenv.config();
 
@@ -24,6 +25,9 @@ app.use(express.json());
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Admin routes (localhost-only with API key)
+app.use('/admin', adminRoutes);
 
 // Error handler must be last
 app.use(errorHandler);

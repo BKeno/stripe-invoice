@@ -15,7 +15,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       if (MOCK_MODE) {
         await handleMockPaymentSuccess(event.data.object as Stripe.PaymentIntent);
       } else {
-        await handlePaymentSuccess(event.data.object as Stripe.PaymentIntent);
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        await handlePaymentSuccess(paymentIntent.id);
       }
       break;
 
