@@ -7,6 +7,7 @@ import {
   updateInvoiceStatus,
   checkRowExists,
   checkHasInvoice,
+  isSheetsEnabled,
 } from "./sheetsService.js";
 import type {
   InvoiceData,
@@ -18,7 +19,12 @@ const getVATRate = (productMetadata: Record<string, string>): number => {
   const vatRate = productMetadata.vat_rate;
 
   if (vatRate) {
-    return parseInt(vatRate, 10);
+    const parsed = parseInt(vatRate, 10);
+    if (isNaN(parsed)) {
+      console.warn(`Invalid VAT rate "${vatRate}" in product metadata, using default 27%`);
+      return 27;
+    }
+    return parsed;
   }
 
   // Default fallback - should be configured per product
@@ -112,10 +118,10 @@ export const handlePaymentSuccess = async (
 
     // Check for service fee
     const serviceFeePercentage = product.metadata.service_fee_percentage;
+    const feeRate = serviceFeePercentage ? parseFloat(serviceFeePercentage) / 100 : NaN;
 
-    if (serviceFeePercentage) {
+    if (serviceFeePercentage && !isNaN(feeRate)) {
       // Product price includes service fee - split into base product + fee for INVOICE
-      const feeRate = parseFloat(serviceFeePercentage) / 100;
       const feeMultiplier = 1 + feeRate;
 
       const baseAmount = totalAmount / feeMultiplier;
@@ -149,6 +155,9 @@ export const handlePaymentSuccess = async (
         vatRate,
       });
     } else {
+      if (serviceFeePercentage && isNaN(feeRate)) {
+        console.warn(`Invalid service_fee_percentage "${serviceFeePercentage}" for product ${product.name}, ignoring`);
+      }
       // No service fee - normal line item for both invoice and sheet
       invoiceLineItems.push({
         productName: product.name,
@@ -181,10 +190,7 @@ export const handlePaymentSuccess = async (
   };
 
   // Add rows to Google Sheets first with pending status
-  const sheetsEnabled =
-    !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON &&
-    process.env.GOOGLE_SERVICE_ACCOUNT_JSON !==
-      '{"type":"service_account","project_id":"..."}';
+  const sheetsEnabled = isSheetsEnabled();
 
   if (sheetsEnabled) {
     // SECURITY LAYER 2: Check if row already exists in Sheet
@@ -356,10 +362,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
     );
 
     // Update sheet status to canceled
-    const sheetsEnabled =
-      !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON &&
-      process.env.GOOGLE_SERVICE_ACCOUNT_JSON !==
-        '{"type":"service_account","project_id":"..."}';
+    const sheetsEnabled = isSheetsEnabled();
 
     if (sheetsEnabled) {
       await updateInvoiceStatus(

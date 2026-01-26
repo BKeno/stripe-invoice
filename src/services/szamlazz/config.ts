@@ -7,7 +7,7 @@ export interface SzamlazzConfig {
   bankAccountNumber: string;
 }
 
-// Statikus XML beállítások (nem változnak számlánként)
+// Static XML settings (don't change per invoice)
 export const XML_SETTINGS = {
   namespace: "http://www.szamlazz.hu/xmlszamla",
   schemaLocation:
@@ -16,7 +16,7 @@ export const XML_SETTINGS = {
   responseVersion: 1,
 } as const;
 
-const SZAMLAZZ_API_URL = "https://www.szamlazz.hu/szamla/"; //failback url
+const SZAMLAZZ_API_URL = "https://www.szamlazz.hu/szamla/"; // fallback URL
 
 export const getSzamlazzConfig = (): SzamlazzConfig => {
   const apiKey = process.env.SZAMLAZZ_API_KEY;

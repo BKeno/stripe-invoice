@@ -9,4 +9,8 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   typescript: true
 });
 
-export const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? '';
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  throw new Error('STRIPE_WEBHOOK_SECRET is required');
+}
+
+export const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;

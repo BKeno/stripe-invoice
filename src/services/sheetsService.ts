@@ -3,6 +3,11 @@ import type { SheetsRow } from '../types/index.js';
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
+export const isSheetsEnabled = (): boolean => {
+  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  return !!json && json !== '{"type":"service_account","project_id":"..."}';
+};
+
 const getAuthClient = () => {
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
@@ -10,7 +15,12 @@ const getAuthClient = () => {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON not configured');
   }
 
-  const credentials = JSON.parse(credentialsJson);
+  let credentials;
+  try {
+    credentials = JSON.parse(credentialsJson);
+  } catch {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON contains invalid JSON');
+  }
 
   const auth = new google.auth.GoogleAuth({
     credentials,
