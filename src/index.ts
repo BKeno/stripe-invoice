@@ -1,11 +1,8 @@
 import express from 'express';
-import dotenv from 'dotenv';
 import { verifyStripeSignature } from './middlewares/stripeSignature.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { handleStripeWebhook } from './controllers/webhookController.js';
 import adminRoutes from './routes/admin.js';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT ?? 3000;

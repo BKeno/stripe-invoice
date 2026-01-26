@@ -9,13 +9,14 @@
  */
 
 import dotenv from 'dotenv';
-import { stripe } from '../src/config/stripe.js';
 import { writeFileSync } from 'fs';
 
-// Load environment variables from custom path if specified
+// Load environment variables BEFORE importing anything that uses them
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
 
 const exportPayments = async (startDate: string, endDate?: string) => {
+  // Dynamic import after env is loaded
+  const { stripe } = await import('../src/config/stripe.js');
   const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
   const endTimestamp = endDate ? Math.floor(new Date(endDate).getTime() / 1000) : Math.floor(Date.now() / 1000);
 

@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Automated invoice generation for Stripe Paylink payments using Számlázz.hu API",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx -r dotenv/config watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",

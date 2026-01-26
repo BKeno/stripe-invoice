@@ -9,12 +9,22 @@
  */
 
 import dotenv from 'dotenv';
-import { handlePaymentSuccess } from '../src/services/webhookService.js';
 
-// Load environment variables from custom path if specified
+// Load environment variables BEFORE importing anything that uses them
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
 
-const processPayments = async (paymentIntentIds: string[]) => {
+const main = async () => {
+  // Dynamic import after env is loaded
+  const { handlePaymentSuccess } = await import('../src/services/webhookService.js');
+
+  const paymentIntentIds = process.argv.slice(2);
+
+  if (paymentIntentIds.length === 0) {
+    console.error('Usage: npm run process-payment <paymentIntentId> [<paymentIntentId2> ...]');
+    console.error('Example: npm run process-payment pi_1234567890');
+    process.exit(1);
+  }
+
   console.log(`Processing ${paymentIntentIds.length} payment(s)...\n`);
 
   for (const paymentIntentId of paymentIntentIds) {
@@ -31,16 +41,7 @@ const processPayments = async (paymentIntentIds: string[]) => {
   console.log('Done!');
 };
 
-// Get PaymentIntent IDs from command line
-const paymentIntentIds = process.argv.slice(2);
-
-if (paymentIntentIds.length === 0) {
-  console.error('Usage: npm run process-payment <paymentIntentId> [<paymentIntentId2> ...]');
-  console.error('Example: npm run process-payment pi_1234567890');
-  process.exit(1);
-}
-
-processPayments(paymentIntentIds).catch((err) => {
+main().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
