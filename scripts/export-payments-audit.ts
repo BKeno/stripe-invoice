@@ -2,21 +2,16 @@
 /**
  * Export payments with invoice status for audit
  *
- * Usage:
- *   npm run audit-payments:staging 2026-01-01
- *   npm run audit-payments:prod 2026-01-01
- *   npm run audit-payments:prod 2026-01-01 2026-01-31  (date range)
+ * Usage (with Railway CLI):
+ *   railway link (select staging or production project)
+ *   railway run npm run audit-payments 2026-01-01
+ *   railway run npm run audit-payments 2026-01-01 2026-01-31  (date range)
  */
 
-import dotenv from 'dotenv';
 import { writeFileSync } from 'fs';
-
-// Load environment variables BEFORE importing anything that uses them
-dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
+import { stripe } from '../src/config/stripe.js';
 
 const exportPayments = async (startDate: string, endDate?: string) => {
-  // Dynamic import after env is loaded
-  const { stripe } = await import('../src/config/stripe.js');
   const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
   const endTimestamp = endDate ? Math.floor(new Date(endDate).getTime() / 1000) : Math.floor(Date.now() / 1000);
 

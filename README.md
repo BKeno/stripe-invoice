@@ -26,10 +26,11 @@ Automated invoice generation for Stripe Paylink payments → Számlázz.hu → G
 
 ```bash
 npm install
-cp .env.example .env
 ```
 
-### 2. Configure Environment
+### 2. Configure Environment (Railway)
+
+All environment variables are managed through Railway dashboard. Required variables:
 
 ```bash
 # Stripe
@@ -113,14 +114,13 @@ Example with service fee (15%):
    ```
 2. Create GCP service account with Sheets API access
 3. Share Sheet with service account email (Editor role)
-4. Add credentials JSON to `.env`
 
 ### 5. Stripe Webhook
 
 1. Dashboard → Developers → Webhooks → Add endpoint
 2. URL: `https://your-domain.com/webhook/stripe`
 3. Events: `payment_intent.succeeded`, `charge.refunded`
-4. Copy signing secret to `.env`
+4. Copy signing secret to Railway environment variables
 
 ### 6. Deploy
 
@@ -136,13 +136,79 @@ git push origin main
 # - Auto-deploy on push
 ```
 
-**Local dev:**
+## Local Development with Railway CLI
+
+Uses Railway CLI to inject environment variables from your Railway projects. **No local .env files needed.**
+
+### Setup (one-time)
 
 ```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login
+railway login
+```
+
+### Two-Terminal Workflow (Recommended)
+
+Keep two terminal tabs open - one for each environment:
+
+**Terminal 1: Staging**
+
+```bash
+cd stripe-invoice
+railway link    # Select STAGING project
+railway run npm run dev
+
+# Webhook testing:
+stripe listen --forward-to localhost:8080/webhook/stripe
+```
+
+**Terminal 2: Production (scripts only)**
+
+```bash
+cd stripe-invoice
+railway link    # Select PRODUCTION project
+
+# Process old payments
+railway run npm run process-payment pi_xxx
+
+# Audit payments
+railway run npm run audit-payments 2026-01-01
+```
+
+### Available Scripts
+
+```bash
+# Development server (use with: railway run)
 npm run dev
 
-# Test webhooks with Stripe CLI:
-stripe listen --forward-to localhost:8080/webhook/stripe
+# Process old payments (use with: railway run)
+npm run process-payment pi_xxx pi_yyy pi_zzz
+
+# Audit payments for missing invoices (use with: railway run)
+npm run audit-payments 2026-01-01
+npm run audit-payments 2026-01-01 2026-01-31  # date range
+
+# Type check
+npm run typecheck
+
+# Build for production
+npm run build
+
+# Production server (Railway runs this automatically)
+npm start
+```
+
+### Quick Environment Switch
+
+```bash
+# Check which project is linked
+railway status
+
+# Switch to different project
+railway link
 ```
 
 ## Deployment Environments
@@ -176,7 +242,7 @@ Create a separate Railway project for testing:
 - ✅ Test invoice generation with real API calls
 - ✅ No risk to production data
 - ✅ Same codebase, isolated environment
-- ✅ Quick toggle between staging/production
+- ✅ Quick toggle between staging/production via `railway link`
 
 ## Architecture
 
@@ -243,7 +309,9 @@ Prevents duplicate invoices during webhook retries:
 2. **Invoice number check:** Skip if `invoice_number` already exists in metadata
 3. **Sheets duplicate check:** Verify Payment ID doesn't exist before creating rows
 
-**Result:** Safe webhook retries, no duplicate invoices. Simplified from 4-layer (removed redundant `processing` flag).
+**Error recovery:** If Sheet row exists but invoice failed, the system retries invoice generation without creating duplicate rows.
+
+**Result:** Safe webhook retries, no duplicate invoices.
 
 ### Stripe Metadata Storage
 
@@ -283,6 +351,7 @@ This allows:
 - **Multi-line items:** Each product as separate `<tetel>` in XML
 - **Response version:** `<valaszVerzio>1</valaszVerzio>` (txt response)
 - **Advance invoice:** `<elolegszamla>true</elolegszamla>` (automatically set if product has `service_fee_percentage`)
+- **Invoice dates:** `teljesítésDátum` and `fizetésiHataridő` use Stripe payment.created timestamp
 
 **Storno Invoice (xmlszamlast):**
 
@@ -293,33 +362,19 @@ This allows:
 
 ## Manual Payment Processing
 
-For processing old payments that occurred **before the webhook was configured**, use the local script with environment-specific configurations.
-
-### Setup
-
-1. **Create environment files:**
-
-```bash
-# .env.staging - for testing with staging keys
-.env.staging
-
-# .env.production - for live invoice generation
-.env.production
-```
-
-2. **Copy Railway environment variables** to the respective files.
+For processing old payments that occurred **before the webhook was configured**.
 
 ### Usage
 
 ```bash
-# STAGING (test keys)
-npm run process-payment:staging pi_1234567890
+# Link to production project
+railway link    # Select PRODUCTION
 
-# PRODUCTION (live keys)
-npm run process-payment:prod pi_1234567890
+# Single payment
+railway run npm run process-payment pi_1234567890
 
 # Multiple payments
-npm run process-payment:prod pi_xxx pi_yyy pi_zzz
+railway run npm run process-payment pi_xxx pi_yyy pi_zzz
 ```
 
 ### Output
@@ -343,9 +398,32 @@ Done!
 - ✅ Safe to retry - 3-layer idempotency protection prevents duplicate invoices
 - ✅ Only processes payments from invoice-enabled payment links (with `irnytszm` field)
 - ✅ Skips payments already processed (checks metadata + Sheet)
-- ✅ Environment-specific configs - no manual .env switching
-- ⚠️ `.env.staging` and `.env.production` are in `.gitignore` - never commit these files
 - ⚠️ Always test on staging first before running on production
+
+## Payments Audit
+
+Export Stripe payments to identify missing invoices.
+
+### Usage
+
+```bash
+# Link to production
+railway link    # Select PRODUCTION
+
+# Export payments from date
+railway run npm run audit-payments 2026-01-01
+
+# Export date range
+railway run npm run audit-payments 2026-01-01 2026-01-31
+```
+
+### Output
+
+Creates `payments-audit-YYYY-MM-DD-now.csv` with columns:
+
+- Payment ID, Amount, Currency, Date
+- Customer Name, Customer Email
+- Has Invoice (YES/NO), Invoice Number
 
 ## Troubleshooting
 
@@ -359,49 +437,33 @@ Done!
 | Webhook signature error     | Update `STRIPE_WEBHOOK_SECRET` from Dashboard                                 |
 | Storno XML error            | Check original invoice number format, verify `action-szamla_agent_st` is used |
 | SevenRooms creating invoice | Correct - SevenRooms payments should NOT have `irnytszm` field                |
+| Wrong env vars locally      | Check `railway status` - ensure correct project is linked                     |
 
-## Development
+## Development Workflow
 
-```bash
-# Dev server (auto-reload)
-npm run dev
-
-# Type check
-npm run typecheck
-
-# Build
-npm run build
-
-# Production
-npm start
-
-```
-
-## Fejlesztés staging branch-en
+### Feature Development
 
 ```bash
-
+# 1. Switch to staging branch
 git checkout staging
 
-# ... kód módosítások ...
+# 2. Make changes and test locally
+railway link    # Select STAGING
+railway run npm run dev
 
+# 3. Commit and push
 git add .
 git commit -m "Feature: xyz"
 git push origin staging
+# → Staging Railway auto-deploys
 
-# → Staging Railway auto-deploy
+# 4. Test on staging environment
 
-# 2. Tesztelés staging-en
-
-# Ellenőrizd, hogy minden működik
-
-# 3. Merge staging → main (production)
-
+# 5. Merge to production
 git checkout main
 git merge staging
 git push origin main
-
-# → Production Railway auto-deploy
+# → Production Railway auto-deploys
 ```
 
 ## Support

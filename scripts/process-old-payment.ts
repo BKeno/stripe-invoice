@@ -2,20 +2,15 @@
 /**
  * Process old payments that occurred before webhook was configured
  *
- * Usage:
- *   npm run process-payment:staging pi_1234567890
- *   npm run process-payment:prod pi_1234567890
- *   npm run process-payment:staging pi_xxx pi_yyy pi_zzz  (multiple payments)
+ * Usage (with Railway CLI):
+ *   railway link (select staging or production project)
+ *   railway run npm run process-payment pi_1234567890
+ *   railway run npm run process-payment pi_xxx pi_yyy pi_zzz  (multiple)
  */
 
-import dotenv from 'dotenv';
-
-// Load environment variables BEFORE importing anything that uses them
-dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
+import { handlePaymentSuccess } from '../src/services/webhookService.js';
 
 const main = async () => {
-  // Dynamic import after env is loaded
-  const { handlePaymentSuccess } = await import('../src/services/webhookService.js');
 
   const paymentIntentIds = process.argv.slice(2);
 

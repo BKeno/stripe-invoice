@@ -4,13 +4,12 @@
   "type": "module",
   "description": "Automated invoice generation for Stripe Paylink payments using Számlázz.hu API",
   "scripts": {
-    "dev": "tsx -r dotenv/config watch src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "process-payment": "tsx scripts/process-old-payment.ts",
-    "process-payment:staging": "DOTENV_CONFIG_PATH=.env.staging tsx scripts/process-old-payment.ts",
-    "process-payment:prod": "DOTENV_CONFIG_PATH=.env.production tsx scripts/process-old-payment.ts"
+    "audit-payments": "tsx scripts/export-payments-audit.ts"
   },
   "keywords": [
     "stripe",
@@ -21,7 +20,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.4.7",
     "express": "^5.0.1",
     "googleapis": "^144.0.0",
     "stripe": "^17.5.0",
