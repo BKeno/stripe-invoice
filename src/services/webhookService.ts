@@ -208,7 +208,7 @@ export const handlePaymentSuccess = async (
       for (const item of sheetLineItems) {
         await appendRowToSheet(
           {
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(freshPaymentIntent.created * 1000).toISOString().split("T")[0],
             customerName,
             email: customerEmail,
             amount: item.amount.toString(),
