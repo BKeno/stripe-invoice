@@ -46,6 +46,7 @@ export interface InvoiceData {
   lineItems: InvoiceLineItem[];
   billingAddress: BillingAddress;
   stripePaymentId: string;
+  paymentDate: Date; // Payment created timestamp - used for teljesítésDátum and fizetésiHataridoDátum
 }
 
 export interface SheetsRow {

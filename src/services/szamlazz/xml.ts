@@ -46,10 +46,8 @@ export const buildInvoiceXML = (
   </beallitasok>
   <fejlec>
     <keltDatum>${new Date().toISOString().split("T")[0]}</keltDatum>
-    <teljesitesDatum>${new Date().toISOString().split("T")[0]}</teljesitesDatum>
-    <fizetesiHataridoDatum>${
-      new Date().toISOString().split("T")[0]
-    }</fizetesiHataridoDatum>
+    <teljesitesDatum>${data.paymentDate.toISOString().split("T")[0]}</teljesitesDatum>
+    <fizetesiHataridoDatum>${data.paymentDate.toISOString().split("T")[0]}</fizetesiHataridoDatum>
     <fizmod>Paylink</fizmod>
     <penznem>${data.currency.toUpperCase()}</penznem>
     <szamlaNyelve>hu</szamlaNyelve>

@@ -177,6 +177,7 @@ export const handlePaymentSuccess = async (
     lineItems: invoiceLineItems,
     billingAddress,
     stripePaymentId: paymentIntentId,
+    paymentDate: new Date(freshPaymentIntent.created * 1000),
   };
 
   // Add rows to Google Sheets first with pending status
@@ -344,6 +345,7 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
     lineItems: invoiceLineItems,
     billingAddress,
     stripePaymentId: paymentIntentId,
+    paymentDate: new Date(paymentIntent.created * 1000), // Original payment date for storno
   };
 
   // Generate refund invoice (storno)

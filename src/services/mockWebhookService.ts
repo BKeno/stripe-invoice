@@ -31,7 +31,8 @@ export const handleMockPaymentSuccess = async (
       address: 'Pasaréti út 57',
       country: 'HU'
     },
-    stripePaymentId: paymentIntent.id
+    stripePaymentId: paymentIntent.id,
+    paymentDate: new Date(paymentIntent.created * 1000)
   };
 
   console.log('[MOCK] Would generate invoice with data:', mockInvoiceData);
