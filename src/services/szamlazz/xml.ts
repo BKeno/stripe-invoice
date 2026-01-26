@@ -1,5 +1,6 @@
 import type { InvoiceData } from "../../types/index.js";
 import { XML_SETTINGS, type SzamlazzConfig } from "./config.js";
+import { escapeXml } from "../../utils/xmlEscape.js";
 
 /**
  * Builds a standard invoice XML for Számlázz.hu API
@@ -15,7 +16,7 @@ export const buildInvoiceXML = (
       const vatAmount = item.unitPrice - netPrice;
 
       return `    <tetel>
-      <megnevezes>${item.productName}</megnevezes>
+      <megnevezes>${escapeXml(item.productName)}</megnevezes>
       <mennyiseg>${item.quantity}</mennyiseg>
       <mennyisegiEgyseg>db</mennyisegiEgyseg>
       <nettoEgysegar>${netPrice.toFixed(2)}</nettoEgysegar>
@@ -59,11 +60,11 @@ export const buildInvoiceXML = (
     <bankszamlaszam>${config.bankAccountNumber}</bankszamlaszam>
   </elado>
   <vevo>
-    <nev>${data.billingAddress.name}</nev>
-    <irsz>${data.billingAddress.postalCode}</irsz>
-    <telepules>${data.billingAddress.city}</telepules>
-    <cim>${data.billingAddress.address}</cim>
-    <email>${data.billingAddress.email}</email>
+    <nev>${escapeXml(data.billingAddress.name)}</nev>
+    <irsz>${escapeXml(data.billingAddress.postalCode)}</irsz>
+    <telepules>${escapeXml(data.billingAddress.city)}</telepules>
+    <cim>${escapeXml(data.billingAddress.address)}</cim>
+    <email>${escapeXml(data.billingAddress.email)}</email>
     <sendEmail>true</sendEmail>
     <adoalany>-1</adoalany>
   </vevo>
@@ -91,17 +92,17 @@ export const buildStornoXML = (
     <valaszVerzio>${XML_SETTINGS.responseVersion}</valaszVerzio>
   </beallitasok>
   <fejlec>
-    <szamlaszam>${originalInvoiceNumber}</szamlaszam>
+    <szamlaszam>${escapeXml(originalInvoiceNumber)}</szamlaszam>
     <keltDatum>${new Date().toISOString().split("T")[0]}</keltDatum>
     <tipus>SS</tipus>
   </fejlec>
   <elado>
-    <emailReplyto>${config.issuerName}</emailReplyto>
+    <emailReplyto>${escapeXml(config.issuerName)}</emailReplyto>
     <emailTargy>Sztornó számla</emailTargy>
     <emailSzoveg>Tisztelt Ügyfelünk! Mellékeljük sztornó számláját.</emailSzoveg>
   </elado>
   <vevo>
-    <email>${data.billingAddress.email}</email>
+    <email>${escapeXml(data.billingAddress.email)}</email>
   </vevo>
 </xmlszamlast>`;
 };
