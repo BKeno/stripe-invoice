@@ -41,9 +41,7 @@ frontend/dist
 backend/.env
 backend/dist
 
-*.md
-.claude.md
-CLAUDE.md
+
 animation-docs.md
 .vercel
 
