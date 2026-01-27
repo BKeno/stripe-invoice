@@ -37,54 +37,6 @@ const getSheetsClient = async () => {
   return google.sheets({ version: 'v4', auth: authClient as any });
 };
 
-export const checkRowExists = async (stripePaymentId: string, sheetName = 'Sheet1'): Promise<boolean> => {
-  try {
-    const sheets = await getSheetsClient();
-    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
-
-    if (!spreadsheetId) {
-      throw new Error('GOOGLE_SHEETS_ID not configured');
-    }
-
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!K:K` // Column K is Stripe Payment ID
-    });
-
-    const rows = response.data.values ?? [];
-    return rows.some(row => row[0] === stripePaymentId);
-  } catch (err) {
-    console.error('Error checking row existence:', err);
-    return false;
-  }
-};
-
-export const checkHasInvoice = async (stripePaymentId: string, sheetName = 'Sheet1'): Promise<boolean> => {
-  try {
-    const sheets = await getSheetsClient();
-    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
-
-    if (!spreadsheetId) {
-      throw new Error('GOOGLE_SHEETS_ID not configured');
-    }
-
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!I:K` // Columns I (Invoice Number), J (Status), K (Payment ID)
-    });
-
-    const rows = response.data.values ?? [];
-    return rows.some(row => {
-      const invoiceNumber = row[0]; // I oszlop - Számla szám
-      const paymentId = row[2]; // K oszlop - Stripe Payment ID
-      return paymentId === stripePaymentId && invoiceNumber && invoiceNumber.trim() !== '';
-    });
-  } catch (err) {
-    console.error('Error checking invoice existence:', err);
-    return false;
-  }
-};
-
 export const appendRowToSheet = async (row: SheetsRow, sheetName = 'Sheet1'): Promise<void> => {
   const sheets = await getSheetsClient();
   const spreadsheetId = process.env.GOOGLE_SHEETS_ID;

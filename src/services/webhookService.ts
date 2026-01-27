@@ -5,8 +5,6 @@ import { generateInvoice, generateRefundInvoice } from "./szamlazz/index.js";
 import {
   appendRowToSheet,
   updateInvoiceStatus,
-  checkRowExists,
-  checkHasInvoice,
   isSheetsEnabled,
 } from "./sheetsService.js";
 import type {
@@ -189,28 +187,24 @@ export const handlePaymentSuccess = async (
     paymentDate: new Date(freshPaymentIntent.created * 1000),
   };
 
-  // Add rows to Google Sheets first with pending status
+  // Generate invoice
+  const invoiceNumber = await generateInvoice(invoiceData);
+
+  // SECURITY LAYER 2: Store invoice number in Stripe metadata IMMEDIATELY
+  // This is the critical idempotency marker - must happen before anything else
+  await stripe.paymentIntents.update(paymentIntentId, {
+    metadata: {
+      invoice_number: invoiceNumber,
+    },
+  });
+
+  console.log(`[Számlázz.hu] Invoice created: ${invoiceNumber}`);
+
+  // Append rows to Google Sheets (best effort - invoice already exists and is tracked in Stripe)
   const sheetsEnabled = isSheetsEnabled();
 
   if (sheetsEnabled) {
-    // SECURITY LAYER 2: Check if row already exists in Sheet
-    const rowExists = await checkRowExists(paymentIntentId, firstSheetName);
-
-    if (rowExists) {
-      // Row exists - check if it has invoice number
-      const hasInvoice = await checkHasInvoice(paymentIntentId, firstSheetName);
-
-      if (hasInvoice) {
-        console.log(
-          `[IDEMPOTENCY] Row already exists with invoice number for payment: ${paymentIntentId}`
-        );
-        return;
-      }
-
-      // Row exists but no invoice (error recovery scenario) - skip row creation, continue to invoice generation
-      console.log(`[RETRY] Row exists without invoice, retrying invoice generation: ${paymentIntentId}`);
-    } else {
-      // No row exists - create rows
+    try {
       for (const item of sheetLineItems) {
         await appendRowToSheet(
           {
@@ -222,49 +216,22 @@ export const handlePaymentSuccess = async (
             quantity: item.quantity,
             vatRate: `${item.vatRate}%`,
             address: `${billingAddress.postalCode} ${billingAddress.city}, ${billingAddress.address}`,
-            invoiceNumber: "",
-            invoiceStatus: "Függőben",
+            invoiceNumber,
+            invoiceStatus: "Kiállítva",
             stripePaymentId: paymentIntentId,
           },
           firstSheetName
         );
       }
-      console.log(`[Sheet] ${sheetLineItems.length} row(s) created with status: Függőben`);
+      console.log(`[Sheet] ${sheetLineItems.length} row(s) added`);
+    } catch (sheetErr) {
+      // Sheet write failed, but invoice exists and Stripe has the record
+      // Log error but don't fail the webhook - can be reconciled later
+      console.error(`[Sheet] Failed to write rows (invoice ${invoiceNumber} exists):`, sheetErr);
     }
-  } else {
-    console.log("[SKIP] Google Sheets not configured");
   }
 
-  // Generate invoice
-  try {
-    const invoiceNumber = await generateInvoice(invoiceData);
-
-    // Update all sheet rows with invoice number and status
-    if (sheetsEnabled) {
-      await updateInvoiceStatus(
-        paymentIntentId,
-        invoiceNumber,
-        "Kiállítva",
-        firstSheetName
-      );
-      console.log(`[Sheet] Updated status: Kiállítva`);
-    }
-
-    // SECURITY LAYER 3: Store invoice number in Stripe metadata for idempotency
-    await stripe.paymentIntents.update(paymentIntentId, {
-      metadata: {
-        invoice_number: invoiceNumber,
-      },
-    });
-
-    console.log(`✓ Complete: ${invoiceNumber} | ${paymentIntentId}`);
-  } catch (err) {
-    console.error("Failed to generate invoice:", err);
-    if (sheetsEnabled) {
-      await updateInvoiceStatus(paymentIntentId, "", "Hiba", firstSheetName);
-    }
-    throw err;
-  }
+  console.log(`✓ Complete: ${invoiceNumber} | ${paymentIntentId}`);
 };
 
 export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
@@ -355,16 +322,25 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
   };
 
   // Generate refund invoice (storno)
-  try {
-    const refundInvoiceNumber = await generateRefundInvoice(
-      originalInvoiceNumber,
-      invoiceData
-    );
+  const refundInvoiceNumber = await generateRefundInvoice(
+    originalInvoiceNumber,
+    invoiceData
+  );
 
-    // Update sheet status to canceled
-    const sheetsEnabled = isSheetsEnabled();
+  // Store refund invoice number in Stripe metadata IMMEDIATELY (idempotency)
+  await stripe.paymentIntents.update(paymentIntentId, {
+    metadata: {
+      refund_invoice_number: refundInvoiceNumber,
+    },
+  });
 
-    if (sheetsEnabled) {
+  console.log(`[Számlázz.hu] Storno created: ${refundInvoiceNumber}`);
+
+  // Update sheet status (best effort - storno already exists and is tracked in Stripe)
+  const sheetsEnabled = isSheetsEnabled();
+
+  if (sheetsEnabled) {
+    try {
       await updateInvoiceStatus(
         paymentIntentId,
         refundInvoiceNumber,
@@ -372,18 +348,11 @@ export const handleRefund = async (refund: Stripe.Refund): Promise<void> => {
         firstSheetName
       );
       console.log(`[Sheet] Updated status: Sztornózva`);
+    } catch (sheetErr) {
+      // Sheet update failed, but storno exists and Stripe has the record
+      console.error(`[Sheet] Failed to update status (storno ${refundInvoiceNumber} exists):`, sheetErr);
     }
-
-    // Store refund invoice number in metadata for idempotency
-    await stripe.paymentIntents.update(paymentIntentId, {
-      metadata: {
-        refund_invoice_number: refundInvoiceNumber,
-      },
-    });
-
-    console.log(`✓ Storno complete: ${refundInvoiceNumber} (cancelled ${originalInvoiceNumber}) | ${paymentIntentId}`);
-  } catch (err) {
-    console.error("Failed to generate refund invoice:", err);
-    throw err;
   }
+
+  console.log(`✓ Storno complete: ${refundInvoiceNumber} (cancelled ${originalInvoiceNumber}) | ${paymentIntentId}`);
 };
