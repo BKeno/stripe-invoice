@@ -20,6 +20,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "exceljs": "^4.4.0",
     "express": "^5.0.1",
     "googleapis": "^144.0.0",
     "stripe": "^17.5.0",
