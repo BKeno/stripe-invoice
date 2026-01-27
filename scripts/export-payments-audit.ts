@@ -13,6 +13,7 @@
  * EXAMPLES:
  *   railway run npm run audit-payments 2026-01-01              # From date to now
  *   railway run npm run audit-payments 2026-01-01 2026-01-31   # Date range
+ *   railway run npm run audit-payments 2026-01-01 --include-refunded  # Include refunds
  *
  * OUTPUT:
  *   1. XLSX file: payments-audit-<start>-<end>.xlsx
@@ -25,52 +26,80 @@
  *      - List of payment IDs missing invoices (for manual processing)
  *
  * FILTERS:
- *   - Only payments with status "succeeded" (excludes refunds, failed, etc.)
+ *   - Only payments with status "succeeded"
  *   - Only payments with checkout sessions (skips SevenRooms, etc.)
+ *   - Excludes refunded payments by default (use --include-refunded to show)
  *
  * NOTES:
- *   - Limited to 100 payments per run (Stripe API default)
+ *   - Fetches ALL payments using pagination (no limit)
  *   - Use payment IDs from output with: railway run npm run process-payment <id>
  */
 
 import ExcelJS from 'exceljs';
+import Stripe from 'stripe';
 import { stripe } from '../src/config/stripe.js';
 
 interface PaymentRow {
   paymentId: string;
-  amount: string;
+  amount: number;
   currency: string;
   date: string;
   customerName: string;
   email: string;
   phone: string;
   products: string;
+  refunded: string;
   hasInvoice: string;
   invoiceNumber: string;
 }
 
-const exportPayments = async (startDate: string, endDate?: string) => {
+const exportPayments = async (startDate: string, endDate?: string, includeRefunded = false) => {
   const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
   const endTimestamp = endDate
     ? Math.floor(new Date(endDate).getTime() / 1000)
     : Math.floor(Date.now() / 1000);
 
-  console.log(`Fetching payments from ${startDate} to ${endDate || 'now'}...\n`);
+  console.log(`Fetching payments from ${startDate} to ${endDate || 'now'}...`);
 
-  // Only fetch succeeded payments
-  const payments = await stripe.paymentIntents.list({
-    limit: 100,
-    created: {
-      gte: startTimestamp,
-      lte: endTimestamp,
-    },
-  });
+  // Fetch all payments using pagination
+  let hasMore = true;
+  let startingAfter: string | undefined;
+  const allPayments: Stripe.PaymentIntent[] = [];
+
+  while (hasMore) {
+    const response = await stripe.paymentIntents.list({
+      limit: 100,
+      created: {
+        gte: startTimestamp,
+        lte: endTimestamp,
+      },
+      ...(startingAfter && { starting_after: startingAfter }),
+    });
+
+    allPayments.push(...response.data);
+    hasMore = response.has_more;
+
+    if (response.data.length > 0) {
+      startingAfter = response.data[response.data.length - 1].id;
+    }
+
+    process.stdout.write(`\rFetched ${allPayments.length} payments...`);
+  }
+  console.log(); // newline after progress
 
   const results: PaymentRow[] = [];
 
-  for (const payment of payments.data) {
+  for (const payment of allPayments) {
     // Filter: only succeeded payments (skip canceled, requires_payment_method, etc.)
     if (payment.status !== 'succeeded') {
+      continue;
+    }
+
+    // Check refund status
+    const charges = await stripe.charges.list({ payment_intent: payment.id, limit: 1 });
+    const isRefunded = charges.data[0]?.refunded ?? false;
+
+    if (isRefunded && !includeRefunded) {
       continue;
     }
 
@@ -101,13 +130,14 @@ const exportPayments = async (startDate: string, endDate?: string) => {
 
     results.push({
       paymentId: payment.id,
-      amount: (payment.amount / 100).toFixed(2),
+      amount: payment.amount / 100,
       currency: payment.currency.toUpperCase(),
       date: new Date(payment.created * 1000).toISOString().split('T')[0],
       customerName,
       email: customerEmail,
       phone: customerPhone,
       products,
+      refunded: isRefunded ? 'YES' : 'NO',
       hasInvoice,
       invoiceNumber,
     });
@@ -129,9 +159,13 @@ const exportPayments = async (startDate: string, endDate?: string) => {
     { header: 'Email', key: 'email', width: 30 },
     { header: 'Phone', key: 'phone', width: 18 },
     { header: 'Products', key: 'products', width: 40 },
+    { header: 'Refunded', key: 'refunded', width: 10 },
     { header: 'Has Invoice', key: 'hasInvoice', width: 12 },
     { header: 'Invoice Number', key: 'invoiceNumber', width: 20 },
   ];
+
+  // Apply number format to Amount column (Excel will display with locale decimal separator)
+  worksheet.getColumn('amount').numFmt = '#,##0.00';
 
   // Style header row
   worksheet.getRow(1).font = { bold: true };
@@ -183,18 +217,22 @@ const exportPayments = async (startDate: string, endDate?: string) => {
   }
 };
 
-// Get dates from command line
-const startDate = process.argv[2];
-const endDate = process.argv[3];
+// Parse command line args
+const args = process.argv.slice(2);
+const includeRefunded = args.includes('--include-refunded');
+const dateArgs = args.filter(arg => !arg.startsWith('--'));
+const startDate = dateArgs[0];
+const endDate = dateArgs[1];
 
 if (!startDate) {
-  console.error('Usage: railway run npm run audit-payments <start-date> [end-date]');
+  console.error('Usage: railway run npm run audit-payments <start-date> [end-date] [--include-refunded]');
   console.error('Example: railway run npm run audit-payments 2026-01-01');
   console.error('Example: railway run npm run audit-payments 2026-01-01 2026-01-31');
+  console.error('Example: railway run npm run audit-payments 2026-01-01 --include-refunded');
   process.exit(1);
 }
 
-exportPayments(startDate, endDate).catch((err) => {
+exportPayments(startDate, endDate, includeRefunded).catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
