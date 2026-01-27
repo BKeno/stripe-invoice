@@ -47,3 +47,7 @@ animation-docs.md
 
 # Dev Docs
 /docs
+
+# Audit exports
+payments-audit-*.csv
+payments-audit-*.xlsx
